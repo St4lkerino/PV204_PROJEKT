@@ -4,6 +4,7 @@ import applets.SimpleApplet;
 import cardTools.CardManager;
 import cardTools.RunConfig;
 import cardTools.Util;
+import java.security.SecureRandom;
 
 import javax.smartcardio.CommandAPDU;
 import javax.smartcardio.ResponseAPDU;
@@ -33,9 +34,36 @@ public class SimpleAPDU {
         try {
             SimpleAPDU main = new SimpleAPDU();
             
-            //main.demoGetRandomDataCommand();
-            //main.demoEncryptDecrypt();
-            main.setAndVerifyPIN();
+            // PIN generation
+            SecureRandom secRandom = new SecureRandom();
+            byte[] PIN = new byte[4];
+            for (int i = 0; i < 4; i++){
+                PIN[i] = (byte) (secRandom.nextInt(10));
+            }      
+            
+            System.out.print("PIN is: ");
+            for (int i = 1; i < 8; i+=2){
+                System.out.print(Util.bytesToHex(PIN).charAt(i));
+            }
+            System.out.println();
+            
+            final CardManager cardMngr = new CardManager(true, APPLET_AID_BYTE);
+            final RunConfig runCfg = RunConfig.getDefaultConfig();
+            runCfg.setAppletToSimulate(SimpleApplet.class); 
+            runCfg.setTestCardType(RunConfig.CARD_TYPE.JCARDSIMLOCAL); // Use local simulator
+            
+            
+
+            byte[] INSTALL_DATA = Util.hexStringToByteArray("0A" + APPLET_AID + "010104" + Util.bytesToHex(PIN));
+            runCfg.setInstallData(INSTALL_DATA);
+
+            // Connect to first available card
+            System.out.print("Connecting to card...");
+            if (!cardMngr.Connect(runCfg)) {
+                System.out.println(" Failed.");
+            }
+            System.out.println(" Done.");
+        
             
         } catch (Exception ex) {
             System.out.println("Exception : " + ex);
