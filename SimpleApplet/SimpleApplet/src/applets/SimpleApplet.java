@@ -20,6 +20,7 @@ public class SimpleApplet extends javacard.framework.Applet {
     final static byte INS_SETPIN = (byte) 0x56;
     final static byte INS_RETURNDATA = (byte) 0x57;
     final static byte INS_SIGNDATA = (byte) 0x58;
+    final static byte INS_KEYPAIR = (byte) 0x59;
 
     final static short ARRAY_LENGTH = (short) 0xff;
     final static byte AES_BLOCK_LENGTH = (short) 0x16;
@@ -42,16 +43,16 @@ public class SimpleApplet extends javacard.framework.Applet {
     final static short SW_TransactionException_prefix = (short) 0xf400;
     final static short SW_CardRuntimeException_prefix = (short) 0xf500;
 
-    private AESKey m_aesKey = null;
     private Cipher m_encryptCipher = null;
     private Cipher m_decryptCipher = null;
     private RandomData m_secureRandom = null;
     private MessageDigest m_hash = null;
     private OwnerPIN m_pin = null;
-    private Signature m_sign = null;
-    private KeyPair m_keyPair = null;
-    private Key m_privateKey = null;
-    private Key m_publicKey = null;
+    private KeyPair kpU, kpV;
+    private ECPrivateKey privKeyU, privKeyV;
+    private ECPublicKey pubKeyU, pubKeyV;
+    private KeyAgreement keyAgreement; 
+    
 
     // TEMPORARRY ARRAY IN RAM
     private byte m_ramArray[] = null;
@@ -89,9 +90,7 @@ public class SimpleApplet extends javacard.framework.Applet {
 
             m_dataArray = new byte[ARRAY_LENGTH];
             Util.arrayFillNonAtomic(m_dataArray, (short) 0, ARRAY_LENGTH, (byte) 0);
-
-            // CREATE AES KEY OBJECT
-            m_aesKey = (AESKey) KeyBuilder.buildKey(KeyBuilder.TYPE_AES, KeyBuilder.LENGTH_AES_256, false);
+            
             // CREATE OBJECTS FOR CBC CIPHERING
             m_encryptCipher = Cipher.getInstance(Cipher.ALG_AES_BLOCK_128_CBC_NOPAD, false);
             m_decryptCipher = Cipher.getInstance(Cipher.ALG_AES_BLOCK_128_CBC_NOPAD, false);
@@ -101,26 +100,11 @@ public class SimpleApplet extends javacard.framework.Applet {
 
             // TEMPORARY BUFFER USED FOR FAST OPERATION WITH MEMORY LOCATED IN RAM
             m_ramArray = JCSystem.makeTransientByteArray((short) 260, JCSystem.CLEAR_ON_DESELECT);
-
-            // SET KEY VALUE
-            m_aesKey.setKey(m_dataArray, (short) 0);
-
-            // INIT CIPHERS WITH NEW KEY
-            m_encryptCipher.init(m_aesKey, Cipher.MODE_ENCRYPT);
-            m_decryptCipher.init(m_aesKey, Cipher.MODE_DECRYPT);
-
+            
+            // SET PIN
             m_pin = new OwnerPIN((byte) 5, (byte) 4); // 5 tries, 4 digits in pin
             m_pin.update(buffer, (byte) dataOffset, (byte) buffer[dataOffset-1]); // set initial random pin
 
-            // CREATE RSA KEYS AND PAIR 
-            m_keyPair = new KeyPair(KeyPair.ALG_RSA_CRT, KeyBuilder.LENGTH_RSA_2048);
-            m_keyPair.genKeyPair(); // Generate fresh key pair on-card
-            m_publicKey = m_keyPair.getPublic();
-            m_privateKey = m_keyPair.getPrivate();
-            // SIGNATURE ENGINE    
-            m_sign = Signature.getInstance(Signature.ALG_RSA_SHA_PKCS1, false);
-            // INIT WITH PRIVATE KEY
-            m_sign.init(m_privateKey, Signature.MODE_SIGN);
 
             // INIT HASH ENGINE
             m_hash = MessageDigest.getInstance(MessageDigest.ALG_SHA, false);
@@ -184,9 +168,6 @@ public class SimpleApplet extends javacard.framework.Applet {
             // APDU instruction parser
             if (apduBuffer[ISO7816.OFFSET_CLA] == CLA_SIMPLEAPPLET) {
                 switch (apduBuffer[ISO7816.OFFSET_INS]) {
-                    case INS_SETKEY:
-                        SetKey(apdu);
-                        break;
                     case INS_ENCRYPT:
                         Encrypt(apdu);
                         break;
@@ -211,6 +192,10 @@ public class SimpleApplet extends javacard.framework.Applet {
                     case INS_SIGNDATA:
                         Sign(apdu);
                         break;
+                    case INS_KEYPAIR:
+                        GenerateKeyPair(apdu);
+                        break;
+                    
                     default:
                         // The INS code is not supported by the dispatcher
                         ISOException.throwIt(ISO7816.SW_INS_NOT_SUPPORTED);
@@ -255,22 +240,33 @@ public class SimpleApplet extends javacard.framework.Applet {
         m_secureRandom.generateData(m_ramArray, (short) 0, (short) m_ramArray.length);
     }
     
-    // SET ENCRYPTION & DECRYPTION KEY
-    void SetKey(APDU apdu) {
-        byte[] apdubuf = apdu.getBuffer();
-        short dataLen = apdu.setIncomingAndReceive();
-
-        // CHECK EXPECTED LENGTH
-        if ((short) (dataLen * 8) != KeyBuilder.LENGTH_AES_256) {
-            ISOException.throwIt(SW_KEY_LENGTH_BAD);
+    void GenerateKeyPair(APDU apdu) {
+        try{
+            kpU = new KeyPair(KeyPair.ALG_EC_FP, 
+                    KeyBuilder.LENGTH_EC_FP_128);
+            kpU.genKeyPair();
+            privKeyU = (ECPrivateKey) kpU.getPrivate();
+            pubKeyU = (ECPublicKey) kpU.getPublic();
+        } 
+        catch(Exception e){
+            ISOException.throwIt((short) 0xFFD1);
         }
-
-        // SET KEY VALUE
-        m_aesKey.setKey(apdubuf, ISO7816.OFFSET_CDATA);
-
-        // INIT CIPHERS WITH NEW KEY
-        m_encryptCipher.init(m_aesKey, Cipher.MODE_ENCRYPT);
-        m_decryptCipher.init(m_aesKey, Cipher.MODE_DECRYPT);
+    }
+    
+    void ExchangePubKeys(APDU apdu){
+        try {
+            byte[] apdubuf = apdu.getBuffer();
+            short dataLen = apdu.setIncomingAndReceive();
+            keyAgreement = KeyAgreement.getInstance(KeyAgreement.ALG_EC_SVDP_DH,false);
+            keyAgreement.init(privKeyV);
+            int len = keyAgreement.generateSecret(apdubuf, (short) ISO7816.OFFSET_CDATA, dataLen, m_ramArray, (short)0);
+            pubKeyV.getW(apdubuf, ISO7816.OFFSET_CDATA);
+            apdu.setOutgoing();
+            //apdu.setOutgoingLength(len);
+        }
+        catch(Exception e){
+            ISOException.throwIt((short) 0xFFD1);
+        }
     }
 
     // ENCRYPT INCOMING BUFFER
@@ -380,7 +376,7 @@ public class SimpleApplet extends javacard.framework.Applet {
         short signLen = 0;
 
         // SIGN INCOMING BUFFER
-        signLen = m_sign.sign(apdubuf, ISO7816.OFFSET_CDATA, (byte) dataLen, m_ramArray, (byte) 0);
+        
 
         // COPY SIGNED DATA INTO OUTGOING BUFFER
         Util.arrayCopyNonAtomic(m_ramArray, (short) 0, apdubuf, ISO7816.OFFSET_CDATA, signLen);

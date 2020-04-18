@@ -4,7 +4,10 @@ import applets.SimpleApplet;
 import cardTools.CardManager;
 import cardTools.RunConfig;
 import cardTools.Util;
+import java.security.KeyPair;
+import java.security.KeyPairGenerator;
 import java.security.SecureRandom;
+import java.util.Scanner;
 
 import javax.smartcardio.CommandAPDU;
 import javax.smartcardio.ResponseAPDU;
@@ -47,27 +50,64 @@ public class SimpleAPDU {
             }
             System.out.println();
             
-            final CardManager cardMngr = new CardManager(true, APPLET_AID_BYTE);
+            
             final RunConfig runCfg = RunConfig.getDefaultConfig();
             runCfg.setAppletToSimulate(SimpleApplet.class); 
             runCfg.setTestCardType(RunConfig.CARD_TYPE.JCARDSIMLOCAL); // Use local simulator
-            
-            
 
             byte[] INSTALL_DATA = Util.hexStringToByteArray("0A" + APPLET_AID + "010104" + Util.bytesToHex(PIN));
             runCfg.setInstallData(INSTALL_DATA);
-
-            // Connect to first available card
-            System.out.print("Connecting to card...");
-            if (!cardMngr.Connect(runCfg)) {
-                System.out.println(" Failed.");
+            
+            // Clear PIN
+            for (int i = 0; i < 4; i++){
+                PIN[i] = (byte) (0);
             }
-            System.out.println(" Done.");
-        
+            main.session(runCfg);
+            
             
         } catch (Exception ex) {
             System.out.println("Exception : " + ex);
         }
+    }
+    
+    public int session(RunConfig runCfg) throws Exception{
+        
+        final CardManager cardMngr = new CardManager(true, APPLET_AID_BYTE);
+        
+        // Connect to first available card
+            System.out.print("Connecting to card...");
+            if (!cardMngr.Connect(runCfg)) {
+                System.out.println(" Failed.");
+                return -1;
+            }
+            System.out.println(" Done.");
+            
+            Scanner myObj = new Scanner(System.in);  // Create a Scanner object
+            System.out.println("Enter PIN:");
+
+            String PINstring = myObj.nextLine();  // Read user input
+            
+            // Validate input
+            if (!PINstring.matches("[0-9]{4}")){
+                System.out.print("Incorrect PIN format.");
+            }
+            
+            // Convert PIN to byte array
+            byte[] PIN = new byte[4];
+            for (int i = 0; i < 4; i++){
+                PIN[i] = (byte) (PINstring.charAt(i) - '0');
+            }
+            
+            
+            cardMngr.Disconnect(false);
+            return 0;
+    }
+    
+    public void ecdh(CardManager cardMngr, byte[] PIN) throws Exception {
+        KeyPairGenerator kpg = KeyPairGenerator.getInstance("EC");
+        kpg.initialize(128);
+        KeyPair kp = kpg.generateKeyPair();
+        byte[] ourPk = kp.getPublic().getEncoded();
     }
     
     public void setAndVerifyPIN() throws Exception {
