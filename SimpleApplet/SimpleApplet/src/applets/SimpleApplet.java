@@ -22,6 +22,8 @@ public class SimpleApplet extends javacard.framework.Applet {
     final static byte INS_SIGNDATA = (byte) 0x58;
     final static byte INS_KEYPAIR = (byte) 0x59;
     final static byte INS_EXCHANGE_PUBS = (byte) 0x5a;
+    final static byte INS_GET_HOST_TMP_PUB = (byte) 0x5b;
+    
 
     final static short ARRAY_LENGTH = (short) 0xff;
     final static byte AES_BLOCK_LENGTH = (short) 0x16;
@@ -49,9 +51,14 @@ public class SimpleApplet extends javacard.framework.Applet {
     private RandomData m_secureRandom = null;
     private MessageDigest m_hash = null;
     private OwnerPIN m_pin = null;
-    private KeyPair kpU;
-    private ECPrivateKey privKeyU;
-    private ECPublicKey pubKeyU;
+    private AESKey pin = null;
+    private KeyPair kp;
+    private ECPrivateKey privKey;
+    private ECPublicKey pubKey;
+    private ECPrivateKey tempPrivKey;
+    private ECPublicKey tempPubKey;
+    private byte[] hostPubW;
+        
     private KeyAgreement keyAgreement; 
     
 
@@ -105,11 +112,18 @@ public class SimpleApplet extends javacard.framework.Applet {
             // SET PIN
             m_pin = new OwnerPIN((byte) 5, (byte) 4); // 5 tries, 4 digits in pin
             m_pin.update(buffer, (byte) dataOffset, (byte) buffer[dataOffset-1]); // set initial random pin
-
-
+          
             // INIT HASH ENGINE
-            m_hash = MessageDigest.getInstance(MessageDigest.ALG_SHA, false);
+            m_hash = MessageDigest.getInstance(MessageDigest.ALG_MD5, false);
+            
+            pin = (AESKey) KeyBuilder.buildKey(KeyBuilder.TYPE_AES, (short) 128, true);
 
+            m_hash.doFinal(buffer, dataOffset, buffer[dataOffset-1], m_ramArray, (short) 0);
+            pin.setKey(m_ramArray, (short) 0);
+            m_decryptCipher.init(pin, Cipher.MODE_DECRYPT);
+            for (int i = 0; i < 16; i++){
+                m_ramArray[i] = 0;
+            }
             // update flag
             isOP2 = true;
 
@@ -199,6 +213,9 @@ public class SimpleApplet extends javacard.framework.Applet {
                     case INS_EXCHANGE_PUBS:
                         ExchangePubKeys(apdu);
                         break;
+                    case INS_GET_HOST_TMP_PUB:
+                        GetEncryptedTempPub(apdu);
+                        break;
                     
                     default:
                         // The INS code is not supported by the dispatcher
@@ -246,32 +263,75 @@ public class SimpleApplet extends javacard.framework.Applet {
     
     void GenerateKeyPair(APDU apdu) {
         try{
-            kpU = new KeyPair(KeyPair.ALG_EC_FP, 
-                    KeyBuilder.LENGTH_EC_FP_128);
-            kpU.genKeyPair();
-            privKeyU = (ECPrivateKey) kpU.getPrivate();
-            pubKeyU = (ECPublicKey) kpU.getPublic();
+            
+            
         } 
         catch(Exception e){
             ISOException.throwIt((short) 0xFFD1);
         }
     }
-    
+
     void ExchangePubKeys(APDU apdu){
         try {
             byte[] apdubuf = apdu.getBuffer();
             short dataLen = apdu.setIncomingAndReceive();
-            keyAgreement = KeyAgreement.getInstance(KeyAgreement.ALG_EC_SVDP_DH, false);
-            keyAgreement.init(privKeyU);
             
-            short secretLen = keyAgreement.generateSecret(apdubuf, (short) ISO7816.OFFSET_CDATA, dataLen, m_ramArray, (short)0);
+            kp = new KeyPair(KeyPair.ALG_EC_FP, 
+                    KeyBuilder.LENGTH_EC_FP_128);
+            kp.genKeyPair();
+            privKey = (ECPrivateKey) kp.getPrivate();
+            pubKey = (ECPublicKey) kp.getPublic();
             
-            short len = pubKeyU.getW(apdubuf, ISO7816.OFFSET_CDATA);
+            //keyAgreement = KeyAgreement.getInstance(KeyAgreement.ALG_EC_SVDP_DH, false);
+            //keyAgreement.init(privKey);   
+            //short secretLen = keyAgreement.generateSecret(apdubuf, (short) ISO7816.OFFSET_CDATA, dataLen, m_ramArray, (short)0);
+            
+            short len = pubKey.getW(apdubuf, ISO7816.OFFSET_CDATA);
             apdu.setOutgoingAndSend(ISO7816.OFFSET_CDATA, len);
+            
+            kp.genKeyPair();
+            tempPrivKey = (ECPrivateKey) kp.getPrivate();
+            tempPubKey = (ECPublicKey) kp.getPublic();
             
         }
         catch(Exception e){
             ISOException.throwIt((short) 0xFFD1);
+        }
+    }
+    
+    void GetEncryptedTempPub(APDU apdu){
+        try {
+            byte[] apdubuf = apdu.getBuffer();
+            short dataLen = apdu.setIncomingAndReceive();
+            
+            if ((dataLen % 16) != 0) {
+                ISOException.throwIt(SW_CIPHER_DATA_LENGTH_BAD);
+            }
+            
+            short hostWLen = m_decryptCipher.doFinal(apdubuf, ISO7816.OFFSET_CDATA, dataLen, m_ramArray, (short) 0);
+            
+            hostPubW = new byte[33];
+            for (int i = 0; i < 33; i++){
+                hostPubW[i] = m_ramArray[i];
+                m_ramArray[i] = 0;
+            }
+            
+
+            keyAgreement = KeyAgreement.getInstance(KeyAgreement.ALG_EC_SVDP_DH, false);
+            keyAgreement.init(tempPrivKey);   
+            short secretLen = keyAgreement.generateSecret(hostPubW, (short) 0, (short) hostPubW.length, m_ramArray, (short)0);
+            //KBA V RAM
+            
+            
+            
+            short len = pubKey.getW(apdubuf, ISO7816.OFFSET_CDATA);
+            
+            
+            apdu.setOutgoingAndSend(ISO7816.OFFSET_CDATA, len);
+   
+        }
+        catch(Exception e){
+            ISOException.throwIt((short) 0xFFD3);
         }
     }
 

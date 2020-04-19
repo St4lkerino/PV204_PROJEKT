@@ -4,10 +4,17 @@ import applets.SimpleApplet;
 import cardTools.CardManager;
 import cardTools.RunConfig;
 import cardTools.Util;
+import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
+import java.security.MessageDigest;
+import javax.crypto.Cipher;
+import java.security.spec.InvalidKeySpecException;
+import java.security.spec.KeySpec;
 import javacard.security.*;
-import javacardx.crypto.*;
 import java.util.Scanner;
+import javax.crypto.SecretKeyFactory;
+import javax.crypto.spec.PBEKeySpec;
+import javax.crypto.spec.SecretKeySpec;
 
 import javax.smartcardio.CommandAPDU;
 import javax.smartcardio.ResponseAPDU;
@@ -109,16 +116,13 @@ public class SimpleAPDU {
             return 0;
     }
     
+    
     public void ecdh(CardManager cardMngr, byte[] PIN) throws Exception {
         KeyPair kp = new KeyPair(KeyPair.ALG_EC_FP, 
                     KeyBuilder.LENGTH_EC_FP_128);
         kp.genKeyPair();
         ECPrivateKey privKey = (ECPrivateKey) kp.getPrivate();
         ECPublicKey pubKey = (ECPublicKey) kp.getPublic();
-        
-
-        final ResponseAPDU response = cardMngr.transmit(new CommandAPDU(Util.hexStringToByteArray("B0590000")));
-        System.out.println(response);
         
         byte temp[] = new byte[255];
         int len = pubKey.getW(temp,(short) 0);
@@ -127,11 +131,42 @@ public class SimpleAPDU {
         
         final ResponseAPDU response2 = cardMngr.transmit(new CommandAPDU(0xB0, 0x5a, 0x00, 0x00, pubKeyW));
         System.out.println(response2);
+        
+        kp.genKeyPair();
+        ECPrivateKey tempPrivKey = (ECPrivateKey) kp.getPrivate();
+        ECPublicKey tempPubKey = (ECPublicKey) kp.getPublic();
+        byte[] cardPubW = response2.getData();
+        
+        
+        MessageDigest digest = MessageDigest.getInstance("MD5");
+        byte[] key = digest.digest(PIN);
+        SecretKeySpec secretKeySpec = new SecretKeySpec(key, "AES");
+        
+        Cipher cipherAes = Cipher.getInstance("AES/CBC/NoPadding");
+        cipherAes.init(Cipher.ENCRYPT_MODE, secretKeySpec);
+
+        
+        SecureRandom random = new SecureRandom();
+        len = pubKey.getW(temp,(short) 0);
+        byte tempPubKeyW[] = new byte[len + (16 - len % 16)];
+        len = pubKey.getW(tempPubKeyW, (short) 0);
+        for (int i = 33; i < tempPubKeyW.length; i++){
+            tempPubKeyW[i] = (byte) random.nextInt(); // against offline
+        }
+        
+                
+        final ResponseAPDU response3 = cardMngr.transmit(new CommandAPDU(0xB0, 0x5b, 0x00, 0x00, cipherAes.doFinal(tempPubKeyW)));
+        System.out.println(response3);
+        
+        
+        
+        
+        
 
 
-        KeyAgreement ka = KeyAgreement.getInstance(KeyAgreement.ALG_EC_SVDP_DH, false);
-        ka.init(privKey);
-        len = ka.generateSecret(response2.getData(), (short) 0, (short) response2.getData().length, temp, (short) 0);
+        //KeyAgreement ka = KeyAgreement.getInstance(KeyAgreement.ALG_EC_SVDP_DH, false);
+        //ka.init(privKey);
+        //len = ka.generateSecret(response2.getData(), (short) 0, (short) response2.getData().length, temp, (short) 0);
         
         int kek = 5;
         
