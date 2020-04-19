@@ -21,6 +21,7 @@ public class SimpleApplet extends javacard.framework.Applet {
     final static byte INS_RETURNDATA = (byte) 0x57;
     final static byte INS_SIGNDATA = (byte) 0x58;
     final static byte INS_KEYPAIR = (byte) 0x59;
+    final static byte INS_EXCHANGE_PUBS = (byte) 0x5a;
 
     final static short ARRAY_LENGTH = (short) 0xff;
     final static byte AES_BLOCK_LENGTH = (short) 0x16;
@@ -48,9 +49,9 @@ public class SimpleApplet extends javacard.framework.Applet {
     private RandomData m_secureRandom = null;
     private MessageDigest m_hash = null;
     private OwnerPIN m_pin = null;
-    private KeyPair kpU, kpV;
-    private ECPrivateKey privKeyU, privKeyV;
-    private ECPublicKey pubKeyU, pubKeyV;
+    private KeyPair kpU;
+    private ECPrivateKey privKeyU;
+    private ECPublicKey pubKeyU;
     private KeyAgreement keyAgreement; 
     
 
@@ -195,6 +196,9 @@ public class SimpleApplet extends javacard.framework.Applet {
                     case INS_KEYPAIR:
                         GenerateKeyPair(apdu);
                         break;
+                    case INS_EXCHANGE_PUBS:
+                        ExchangePubKeys(apdu);
+                        break;
                     
                     default:
                         // The INS code is not supported by the dispatcher
@@ -257,12 +261,13 @@ public class SimpleApplet extends javacard.framework.Applet {
         try {
             byte[] apdubuf = apdu.getBuffer();
             short dataLen = apdu.setIncomingAndReceive();
-            keyAgreement = KeyAgreement.getInstance(KeyAgreement.ALG_EC_SVDP_DH,false);
-            keyAgreement.init(privKeyV);
-            int len = keyAgreement.generateSecret(apdubuf, (short) ISO7816.OFFSET_CDATA, dataLen, m_ramArray, (short)0);
-            pubKeyV.getW(apdubuf, ISO7816.OFFSET_CDATA);
+            keyAgreement = KeyAgreement.getInstance(KeyAgreement.ALG_EC_SVDP_DH, false);
+            keyAgreement.init(privKeyU);
+            short len = keyAgreement.generateSecret(apdubuf, (short) ISO7816.OFFSET_CDATA, dataLen, m_ramArray, (short)0);
+            
+            pubKeyU.getW(apdubuf, ISO7816.OFFSET_CDATA);
             apdu.setOutgoing();
-            //apdu.setOutgoingLength(len);
+            apdu.setOutgoingLength(len);
         }
         catch(Exception e){
             ISOException.throwIt((short) 0xFFD1);
