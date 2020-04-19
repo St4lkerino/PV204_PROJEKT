@@ -5,6 +5,8 @@
         <group>
             <file>file:/C:/Users/St4lker/PV204_PROJEKT/SimpleApplet/SimpleApplet/src/applets/SimpleApplet.java</file>
             <file>file:/C:/Users/St4lker/PV204_PROJEKT/SimpleApplet/SimpleAPDU/src/simpleapdu/SimpleAPDU.java</file>
+            <file>file:/C:/Users/St4lker/PV204_PROJEKT/SimpleApplet/SimpleAPDU/src/cardTools/CardManager.java</file>
+            <file>file:/C:/Users/St4lker/PV204_PROJEKT/SimpleApplet/SimpleAPDU/src/cardTools/SimulatedCardChannelLocal.java</file>
         </group>
     </open-files>
 </project-private>

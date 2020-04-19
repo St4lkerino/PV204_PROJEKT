@@ -130,6 +130,7 @@ public class SimpleAPDU {
         byte pubKeyW[] = new byte[len];
         len = pubKey.getW(pubKeyW, (short) 0);
         
+        //Send pub key;
         final ResponseAPDU response2 = cardMngr.transmit(new CommandAPDU(0xB0, 0x5a, 0x00, 0x00, pubKeyW));
         System.out.println(response2);
         
@@ -154,11 +155,12 @@ public class SimpleAPDU {
         for (int i = 33; i < tempPubKeyW.length; i++){
             tempPubKeyW[i] = (byte) random.nextInt(); // against offline
         }
-        
-                
+          
         final ResponseAPDU response3 = cardMngr.transmit(new CommandAPDU(0xB0, 0x5b, 0x00, 0x00, cipherAes.doFinal(tempPubKeyW)));
         System.out.println(response3);
         
+        
+            
         
         
         
