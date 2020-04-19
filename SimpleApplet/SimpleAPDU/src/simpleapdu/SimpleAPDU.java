@@ -4,12 +4,10 @@ import applets.SimpleApplet;
 import cardTools.CardManager;
 import cardTools.RunConfig;
 import cardTools.Util;
-import java.security.KeyPair;
-import java.security.KeyPairGenerator;
 import java.security.SecureRandom;
-import java.security.interfaces.ECPublicKey;
+import javacard.security.*;
+import javacardx.crypto.*;
 import java.util.Scanner;
-import javax.crypto.KeyAgreement;
 
 import javax.smartcardio.CommandAPDU;
 import javax.smartcardio.ResponseAPDU;
@@ -33,38 +31,7 @@ public class SimpleAPDU {
         {
         };
     
-    /**
- * This method converts the EC public key (ECPublicKey#getW()) into ECPublicKey
- * @param cardPublicKey as W
- * @param curveName (for example "P-224")
- * @return java.security.interfaces.ECPublicKey
- */
-public ECPublicKey ucPublicKeyToPublicKey(byte[] cardPublicKey, String curveName) {
-    //for example curveName = "P-224";
-    java.security.interfaces.ECPublicKey ecPublicKey = null; // java.security.interfaces.ECPublicKey
-    java.security.KeyFactory kf = null;
 
-    org.bouncycastle.jce.spec.ECNamedCurveParameterSpec ecNamedCurveParameterSpec = ECNamedCurveTable.getParameterSpec(curveName);
-    org.bouncycastle.math.ec.ECCurve curve = ecNamedCurveParameterSpec.getCurve();
-    java.security.spec.EllipticCurve ellipticCurve = EC5Util.convertCurve(curve, ecNamedCurveParameterSpec.getSeed());
-    java.security.spec.ECPoint ecPoint = ECPointUtil.decodePoint(ellipticCurve, cardPublicKey);
-    java.security.spec.ECParameterSpec ecParameterSpec = EC5Util.convertSpec(ellipticCurve, ecNamedCurveParameterSpec);
-    java.security.spec.ECPublicKeySpec publicKeySpec = new java.security.spec.ECPublicKeySpec(ecPoint, ecParameterSpec);
-
-    try {
-        kf = java.security.KeyFactory.getInstance("EC", "BC");
-    } catch (Exception e) {
-        System.out.println("Caught Exception kf : " + e.toString());
-    }
-
-    try {
-        ecPublicKey = (ECPublicKey) kf.generatePublic(publicKeySpec);
-    } catch (Exception e) {
-        System.out.println("Caught Exception public key: " + e.toString());
-    }
-
-    return ecPublicKey;
-}
 
     /**
      * Main entry point.
@@ -143,26 +110,30 @@ public ECPublicKey ucPublicKeyToPublicKey(byte[] cardPublicKey, String curveName
     }
     
     public void ecdh(CardManager cardMngr, byte[] PIN) throws Exception {
-        KeyPairGenerator kpg = KeyPairGenerator.getInstance("EC");
-        kpg.initialize(128);
-        KeyPair kp = kpg.generateKeyPair();
-        byte[] ourPk = kp.getPublic().getEncoded();
+        KeyPair kp = new KeyPair(KeyPair.ALG_EC_FP, 
+                    KeyBuilder.LENGTH_EC_FP_128);
+        kp.genKeyPair();
+        ECPrivateKey privKey = (ECPrivateKey) kp.getPrivate();
+        ECPublicKey pubKey = (ECPublicKey) kp.getPublic();
         
+
         final ResponseAPDU response = cardMngr.transmit(new CommandAPDU(Util.hexStringToByteArray("B0590000")));
         System.out.println(response);
         
-        final ResponseAPDU response2 = cardMngr.transmit(new CommandAPDU(0xB0, 0x5a, 0x00, 0x00, ourPk));
+        byte temp[] = new byte[255];
+        int len = pubKey.getW(temp,(short) 0);
+        byte pubKeyW[] = new byte[len];
+        len = pubKey.getW(pubKeyW, (short) 0);
+        
+        final ResponseAPDU response2 = cardMngr.transmit(new CommandAPDU(0xB0, 0x5a, 0x00, 0x00, pubKeyW));
         System.out.println(response2);
+
+
+        KeyAgreement ka = KeyAgreement.getInstance(KeyAgreement.ALG_EC_SVDP_DH, false);
+        ka.init(privKey);
+        len = ka.generateSecret(response2.getData(), (short) 0, (short) response2.getData().length, temp, (short) 0);
         
-        ECPublicKey theirPub = ucPublicKeyToPublicKey(response.getData(), "secp128r1");
-        
-        
-        KeyAgreement ka = KeyAgreement.getInstance("ECDH");
-        ka.init(kp.getPrivate());
-        ka.doPhase(theirPub, true);
-        byte[] sharedSecret = ka.generateSecret();   
-        
-        
+        int kek = 5;
         
     }
     

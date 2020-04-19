@@ -263,11 +263,12 @@ public class SimpleApplet extends javacard.framework.Applet {
             short dataLen = apdu.setIncomingAndReceive();
             keyAgreement = KeyAgreement.getInstance(KeyAgreement.ALG_EC_SVDP_DH, false);
             keyAgreement.init(privKeyU);
-            short len = keyAgreement.generateSecret(apdubuf, (short) ISO7816.OFFSET_CDATA, dataLen, m_ramArray, (short)0);
             
-            pubKeyU.getW(apdubuf, ISO7816.OFFSET_CDATA);
-            apdu.setOutgoing();
-            apdu.setOutgoingLength(len);
+            short secretLen = keyAgreement.generateSecret(apdubuf, (short) ISO7816.OFFSET_CDATA, dataLen, m_ramArray, (short)0);
+            
+            short len = pubKeyU.getW(apdubuf, ISO7816.OFFSET_CDATA);
+            apdu.setOutgoingAndSend(ISO7816.OFFSET_CDATA, len);
+            
         }
         catch(Exception e){
             ISOException.throwIt((short) 0xFFD1);
