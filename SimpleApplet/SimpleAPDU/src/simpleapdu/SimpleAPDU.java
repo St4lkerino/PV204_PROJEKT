@@ -102,6 +102,7 @@ public class SimpleAPDU {
             // Validate input
             if (!PINstring.matches("[0-9]{4}")){
                 System.out.print("Incorrect PIN format.");
+                return -2;
             }
             
             // Convert PIN to byte array
