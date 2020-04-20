@@ -150,9 +150,9 @@ public class SimpleAPDU {
         
         SecureRandom random = new SecureRandom();
         len = tempPubKey.getW(temp,(short) 0);
-        byte tempPubKeyW[] = new byte[len + (16 - len % 16)];
+        byte tempPubKeyW[] = new byte[len + (16 - (len % 16))];
         len = tempPubKey.getW(tempPubKeyW, (short) 0);
-        for (int i = 33; i < tempPubKeyW.length; i++){
+        for (int i = len; i < tempPubKeyW.length; i++){
             tempPubKeyW[i] = (byte) random.nextInt(); // against offline
         }
           

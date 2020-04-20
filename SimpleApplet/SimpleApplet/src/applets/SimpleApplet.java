@@ -51,13 +51,15 @@ public class SimpleApplet extends javacard.framework.Applet {
     private OwnerPIN m_pin = null;
     private AESKey pin = null;
     private KeyPair kp;
-    private ECPrivateKey privKey;
-    private ECPublicKey pubKey;
-    private ECPrivateKey tempPrivKey;
-    private ECPublicKey tempPubKey;
-    private byte[] tempHostPubW;
-    private byte[] hostPubW;
+    private ECPrivateKey m_privKey;
+    private ECPublicKey m_pubKey;
+    private ECPrivateKey m_tempPrivKey;
+    private ECPublicKey m_tempPubKey;
+    private byte[] m_tempHostPubW;
+    private byte[] m_hostPubW;
     private MessageDigest md5_hash = null;
+    private MessageDigest m_hmac_sha256 = null;
+    private HMACKey m_tempSessionHMACKey = null;
 
     private KeyAgreement keyAgreement;
 
@@ -116,6 +118,8 @@ public class SimpleApplet extends javacard.framework.Applet {
             m_hash = MessageDigest.getInstance(MessageDigest.ALG_SHA, false);
 
             md5_hash = MessageDigest.getInstance(MessageDigest.ALG_MD5, false);
+            
+            m_hmac_sha256 = MessageDigest.getInstance(MessageDigest.ALG_SHA_256, false);
 
             pin = (AESKey) KeyBuilder.buildKey(KeyBuilder.TYPE_AES, (short) 128, true);
 
@@ -274,25 +278,25 @@ public class SimpleApplet extends javacard.framework.Applet {
             byte[] apdubuf = apdu.getBuffer();
             short dataLen = apdu.setIncomingAndReceive();
             
-            hostPubW = new byte[dataLen];
-            Util.arrayCopy(apdubuf, ISO7816.OFFSET_CDATA, hostPubW, (short) 0, dataLen);
+            m_hostPubW = new byte[dataLen];
+            Util.arrayCopy(apdubuf, ISO7816.OFFSET_CDATA, m_hostPubW, (short) 0, dataLen);
 
             kp = new KeyPair(KeyPair.ALG_EC_FP,
                     KeyBuilder.LENGTH_EC_FP_128);
             kp.genKeyPair();
-            privKey = (ECPrivateKey) kp.getPrivate();
-            pubKey = (ECPublicKey) kp.getPublic();
+            m_privKey = (ECPrivateKey) kp.getPrivate();
+            m_pubKey = (ECPublicKey) kp.getPublic();
 
             //keyAgreement = KeyAgreement.getInstance(KeyAgreement.ALG_EC_SVDP_DH, false);
-            //keyAgreement.init(privKey);   
+            //keyAgreement.init(m_privKey);   
             //short secretLen = keyAgreement.generateSecret(apdubuf, (short) ISO7816.OFFSET_CDATA, dataLen, m_ramArray, (short)0);
-            //Get host PUB NOT HERE
-            short len = pubKey.getW(apdubuf, ISO7816.OFFSET_CDATA);
+
+            short len = m_pubKey.getW(apdubuf, ISO7816.OFFSET_CDATA);
             apdu.setOutgoingAndSend(ISO7816.OFFSET_CDATA, len);
 
             kp.genKeyPair();
-            tempPrivKey = (ECPrivateKey) kp.getPrivate();
-            tempPubKey = (ECPublicKey) kp.getPublic();
+            m_tempPrivKey = (ECPrivateKey) kp.getPrivate();
+            m_tempPubKey = (ECPublicKey) kp.getPublic();
 
         } catch (Exception e) {
             ISOException.throwIt((short) 0xFFD1);
@@ -301,22 +305,27 @@ public class SimpleApplet extends javacard.framework.Applet {
 
     byte[] GenerateHashChallenge(short secretLength) {
 
-        AESKey sessionAESKey = (AESKey) KeyBuilder.buildKey(KeyBuilder.TYPE_AES, KeyBuilder.LENGTH_AES_128, false);
-        byte[] keyHash = new byte[16];
-        md5_hash.doFinal(m_ramArray, (short) 0, (short) secretLength, keyHash, (short) 0);
-        sessionAESKey.setKey(keyHash, SW_BAD_PIN);
+        m_tempSessionHMACKey = (HMACKey) KeyBuilder.buildKey(KeyBuilder.TYPE_HMAC, KeyBuilder.LENGTH_HMAC_SHA_256_BLOCK_64, false);
+        byte[] keyHash = new byte[8];
+        //check
+        m_tempSessionHMACKey.setKey(m_ramArray, (short) 0, (short) 8);
 
         //Copy pubkey to ram, after secret
-        short pubWLen = pubKey.getW(m_ramArray, secretLength);
+        short pubWLen = m_pubKey.getW(m_ramArray, secretLength);
         //copy host pub W to ram
-        Util.arrayCopy(hostPubW, (short) 0, m_ramArray, (short) (pubWLen + secretLength), (short) hostPubW.length);
+        Util.arrayCopy(m_hostPubW, (short) 0, m_ramArray, (short) (pubWLen + secretLength), (short) m_hostPubW.length);
         //copy temp pub W to ram;
-        short tempPubWLen = tempPubKey.getW(m_ramArray, (short) (secretLength + pubWLen + hostPubW.length));
+        short tempPubWLen = m_tempPubKey.getW(m_ramArray, (short) (secretLength + pubWLen + m_hostPubW.length));
 
-        short totalLength = (short) (hostPubW.length + pubWLen + tempPubWLen);
+        short totalLength = (short) (m_hostPubW.length + pubWLen + tempPubWLen);
         //hash it next and return
         
-        return new byte[40];
+        byte[] result = new byte[32];
+        m_hmac_sha256.doFinal(m_ramArray, secretLength, totalLength, result, (short) 0);
+        
+        
+        
+        return result;
     }
 
     void GetEncryptedTempPub(APDU apdu) {
@@ -330,23 +339,24 @@ public class SimpleApplet extends javacard.framework.Applet {
 
             short hostWLen = m_decryptCipher.doFinal(apdubuf, ISO7816.OFFSET_CDATA, dataLen, m_ramArray, (short) 0);
 
-            tempHostPubW = new byte[33];
+            m_tempHostPubW = new byte[33];
             for (int i = 0; i < 33; i++) {
-                tempHostPubW[i] = m_ramArray[i];
+                m_tempHostPubW[i] = m_ramArray[i]; //change to arrayCopy
             }
             //TODO clear
 
             keyAgreement = KeyAgreement.getInstance(KeyAgreement.ALG_EC_SVDP_DH, false);
-            keyAgreement.init(tempPrivKey);
-            short secretLen = keyAgreement.generateSecret(tempHostPubW, (short) 0, (short) tempHostPubW.length, m_ramArray, (short) 0);
+            keyAgreement.init(m_tempPrivKey);
+            short secretLen = keyAgreement.generateSecret(m_tempHostPubW, (short) 0, (short) m_tempHostPubW.length, m_ramArray, (short) 0);
             //KBA V RAM
 
-            short len = pubKey.getW(apdubuf, ISO7816.OFFSET_CDATA);
+            short len = m_pubKey.getW(apdubuf, ISO7816.OFFSET_CDATA);
             //add hash(Public of card, public of host, KBA, temp of card
+            byte[] challenge = GenerateHashChallenge(secretLen);
             
-            
+            Util.arrayCopy(challenge, (short) 0, apdubuf, (short) (ISO7816.OFFSET_CDATA + len), (short) challenge.length);
 
-            apdu.setOutgoingAndSend(ISO7816.OFFSET_CDATA, len);
+            apdu.setOutgoingAndSend(ISO7816.OFFSET_CDATA, (short) (len + (short) challenge.length));
 
         } catch (Exception e) {
             ISOException.throwIt((short) 0xFFD3);
