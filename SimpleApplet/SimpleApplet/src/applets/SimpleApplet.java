@@ -23,6 +23,7 @@ public class SimpleApplet extends javacard.framework.Applet {
     final static byte INS_EXCHANGE_PUBS = (byte) 0x5a;
     final static byte INS_GET_HOST_TMP_PUB = (byte) 0x5b;
     final static byte INS_GET_HOST_CHALLENGE = (byte) 0x5c;
+    final static byte SESH_KEYS = (byte) 0x5d;
 
     final static short ARRAY_LENGTH = (short) 0xff;
     final static byte AES_BLOCK_LENGTH = (short) 0x16;
@@ -227,7 +228,9 @@ public class SimpleApplet extends javacard.framework.Applet {
                     case INS_GET_HOST_CHALLENGE:
                         GetHostChallenge(apdu);
                         break;
-
+                    case SESH_KEYS:
+                        SessionKeys(apdu);
+                        break;
                     default:
                         // The INS code is not supported by the dispatcher
                         ISOException.throwIt(ISO7816.SW_INS_NOT_SUPPORTED);
@@ -278,6 +281,29 @@ public class SimpleApplet extends javacard.framework.Applet {
         } catch (Exception e) {
             ISOException.throwIt((short) 0xFFD1);
         }
+    }
+    
+    // Exchange challenges and derive session keys from them, using DH secret
+    void SessionKeys(APDU apdu){
+        byte[] apdubuf = apdu.getBuffer();
+        short dataLen = apdu.setIncomingAndReceive();
+        byte[] derivData = new byte[16];
+
+        // CHECK EXPECTED LENGTH == 8
+        if ((dataLen % 8) != 0) {
+            ISOException.throwIt(SW_CIPHER_DATA_LENGTH_BAD);
+        }
+        Util.arrayCopy(apdubuf, ISO7816.OFFSET_CDATA, derivData, (short) 4, (short) 4);
+        Util.arrayCopy(apdubuf, ISO7816.OFFSET_CDATA, derivData, (short) 12, (short) 4);
+        
+        // GENERATE CARD CHALLENGE
+        
+        
+        // SEND CARD CHALLENGE IN RESPONSE APDU
+        
+        
+        // GET SESSION KEYS FROM DERIVATION DATA (CHALLENGES COMBINED)
+        
     }
 
     void ExchangePubKeys(APDU apdu) {
@@ -417,7 +443,7 @@ public class SimpleApplet extends javacard.framework.Applet {
             
             
             //DELET THIS 
-            Util.arrayCopy(m_ramArray, (short) 0, apdubuf, ISO7816.OFFSET_CDATA, secretLen);
+            //Util.arrayCopy(m_ramArray, (short) 0, apdubuf, ISO7816.OFFSET_CDATA, secretLen);
             apdu.setOutgoingAndSend(ISO7816.OFFSET_CDATA, (short) secretLen);
             //DELET THAT ^
                      

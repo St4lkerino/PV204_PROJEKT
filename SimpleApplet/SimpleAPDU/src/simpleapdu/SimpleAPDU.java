@@ -4,27 +4,18 @@ import applets.SimpleApplet;
 import cardTools.CardManager;
 import cardTools.RunConfig;
 import cardTools.Util;
-import java.lang.reflect.Array;
-import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.security.MessageDigest;
 import javax.crypto.Cipher;
-import java.security.spec.InvalidKeySpecException;
-import java.security.spec.KeySpec;
 import java.util.Arrays;
 import javacard.security.*;
 import java.util.Scanner;
 import javax.crypto.Mac;
-import javax.crypto.SecretKeyFactory;
 import javax.crypto.spec.IvParameterSpec;
-import javax.crypto.spec.PBEKeySpec;
 import javax.crypto.spec.SecretKeySpec;
 
 import javax.smartcardio.CommandAPDU;
 import javax.smartcardio.ResponseAPDU;
-import org.bouncycastle.jcajce.provider.asymmetric.util.EC5Util;
-import org.bouncycastle.jce.ECNamedCurveTable;
-import org.bouncycastle.jce.ECPointUtil;
 
 /**
  * Test class.
@@ -37,10 +28,10 @@ public class SimpleAPDU {
     private static byte APPLET_AID_BYTE[] = Util.hexStringToByteArray(APPLET_AID);
 
     private static final String STR_APDU_GETRANDOM = "B054100000";
-    private static final String STR_APDU_ENCRYPT = "B05000001001020304050607080102030405060708";
-    private static final byte[] INSTALL_PAR = new byte[] 
-        {
-        };
+    
+    private byte[] staticEncKey;
+        
+        
     
 
 
@@ -116,9 +107,18 @@ public class SimpleAPDU {
             }
             
             ecdh(cardMngr, PIN);
+            sessionKeys(cardMngr);
             
             cardMngr.Disconnect(false);
             return 0;
+    }
+    
+    private void sessionKeys(CardManager cardMngr) throws Exception {
+        byte[] hostChal = new byte[8];
+        SecureRandom.getInstanceStrong().nextBytes(hostChal);
+        final ResponseAPDU response = cardMngr.transmit(new CommandAPDU(0xB0, 0x5d, 0x00, 0x00, hostChal));
+        
+        
     }
     
     private boolean verifyChallenge(Mac mac, byte[] cardPubW, byte[] hostPubW, byte[] cardTempPub, byte[] challenge){
@@ -227,6 +227,7 @@ public class SimpleAPDU {
         //DEBUG
         if (Arrays.equals(cardSecret, finalSecret)){
             System.out.println("Final secrets are the same");
+            staticEncKey = finalSecret;
         } else {
             System.out.println("Final secrets are NOT the same");
         }
@@ -291,6 +292,7 @@ public class SimpleAPDU {
         System.out.println(response);
     }
 
+    /*
     public void demoEncryptDecrypt() throws Exception {
         final CardManager cardMngr = new CardManager(true, APPLET_AID_BYTE);
         final RunConfig runCfg = RunConfig.getDefaultConfig();
@@ -324,4 +326,5 @@ public class SimpleAPDU {
         // Task 4
         // TODO: Prepare and send APDU for setting different AES key, then encrypt and verify (with http://extranet.cryptomathic.com/aescalc/index
     }        
+*/
 }
