@@ -6,10 +6,8 @@
 *.nar
 hs_err_pid*
 
-nbproject/private/
-build/
-nbbuild/
-dist/
-nbdist/
+SimpleApplet/SimpleAPDU/nbproject/private/
+SimpleApplet/SimpleAPDU/build/
+SimpleApplet/SimpleAPDU/dist/
 nbactions.xml
 nb-configuration.xml
