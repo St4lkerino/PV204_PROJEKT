@@ -4,6 +4,7 @@ import applets.SimpleApplet;
 import cardTools.CardManager;
 import cardTools.RunConfig;
 import cardTools.Util;
+import java.lang.reflect.Array;
 import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.security.MessageDigest;
@@ -13,6 +14,7 @@ import java.security.spec.KeySpec;
 import java.util.Arrays;
 import javacard.security.*;
 import java.util.Scanner;
+import javax.crypto.Mac;
 import javax.crypto.SecretKeyFactory;
 import javax.crypto.spec.IvParameterSpec;
 import javax.crypto.spec.PBEKeySpec;
@@ -119,6 +121,26 @@ public class SimpleAPDU {
             return 0;
     }
     
+    private boolean verifyChallenge(Mac mac, byte[] cardPubW, byte[] hostPubW, byte[] cardTempPub, byte[] challenge){
+        byte[] concatedKeys = new byte[cardPubW.length + hostPubW.length + cardTempPub.length];
+        System.arraycopy(cardPubW, 0, concatedKeys, 0, cardPubW.length);
+        System.arraycopy(hostPubW, 0, concatedKeys, cardPubW.length, hostPubW.length);
+        System.arraycopy(cardTempPub, 0, concatedKeys, cardPubW.length + hostPubW.length, cardTempPub.length);
+        
+        
+        byte[] chall = mac.doFinal(concatedKeys);
+        
+        return Arrays.equals(chall, challenge);
+    }
+    
+    private byte[] generateChallenge(Mac mac, byte[] hostPubW, byte[] cardPubW){
+        byte[] concatedKeys = new byte[cardPubW.length + hostPubW.length + 1];
+        System.arraycopy(hostPubW, 0, concatedKeys, 0, hostPubW.length);
+        System.arraycopy(cardPubW, 0, concatedKeys, hostPubW.length, cardPubW.length);
+        concatedKeys[concatedKeys.length - 1] = 0x0;
+        
+        return mac.doFinal(concatedKeys);
+    }
     
     public void ecdh(CardManager cardMngr, byte[] PIN) throws Exception {
         KeyPair kp = new KeyPair(KeyPair.ALG_EC_FP, 
@@ -154,8 +176,7 @@ public class SimpleAPDU {
         IvParameterSpec ivSpec = new IvParameterSpec(ivArray);
         
         cipherAes.init(Cipher.ENCRYPT_MODE, secretKeySpec, ivSpec);
-
-        
+ 
         SecureRandom random = new SecureRandom();
         len = tempPubKey.getW(temp,(short) 0);
         byte tempPubKeyW[] = new byte[len + (16 - (len % 16))];
@@ -167,19 +188,43 @@ public class SimpleAPDU {
        
         final ResponseAPDU response3 = cardMngr.transmit(new CommandAPDU(0xB0, 0x5b, 0x00, 0x00, cipherAes.doFinal(tempPubKeyW)));
         System.out.println(response3);
+        byte[] cardTempPub = Arrays.copyOf(response3.getData(), 33);
+        byte[] challenge = Arrays.copyOfRange(response3.getData(), 33, response3.getData().length);
+
+        KeyAgreement ka = KeyAgreement.getInstance(KeyAgreement.ALG_EC_SVDP_DH, false);
+        ka.init(tempPrivKey);
+        len = ka.generateSecret(cardTempPub, (short) 0, (short) cardTempPub.length, temp, (short) 0);
         
         
-            
+        byte[] tempSecret = Arrays.copyOf(temp, 16); //secret key
+        
+        
+        Mac sha256HMAC = Mac.getInstance("HmacSHA256");
+        SecretKeySpec secretKey = new SecretKeySpec(tempSecret, "HmacSHA256");
+        sha256HMAC.init(secretKey);
+        
+        boolean cardChallengeOK = verifyChallenge(sha256HMAC, cardPubW, pubKeyW, cardTempPub, challenge);
+        if (cardChallengeOK){
+            System.out.println("Card challenge is OK!");
+        } else {
+            System.out.println("Card challenge is NOK!");
+        }
+        
+        byte[] hostChallenge = generateChallenge(sha256HMAC, pubKeyW, cardPubW);
+        
+        final ResponseAPDU response4 = cardMngr.transmit(new CommandAPDU(0xB0, 0x5c, 0x00, 0x00, hostChallenge));
+        System.out.println(response4);
+        
+        
+        
+        
+        
         
         
         
         
 
-
-        //KeyAgreement ka = KeyAgreement.getInstance(KeyAgreement.ALG_EC_SVDP_DH, false);
-        //ka.init(privKey);
-        //len = ka.generateSecret(response2.getData(), (short) 0, (short) response2.getData().length, temp, (short) 0);
-        
+        // </verify>
         int kek = 5;
         
     }
