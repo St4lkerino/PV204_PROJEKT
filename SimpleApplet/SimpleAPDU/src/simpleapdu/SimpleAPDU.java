@@ -164,8 +164,7 @@ public class SimpleAPDU {
             tempPubKeyW[i] = (byte) random.nextInt(); // against offline
         }
           
-        
-        byte[] iv = cipherAes.getIV();
+       
         final ResponseAPDU response3 = cardMngr.transmit(new CommandAPDU(0xB0, 0x5b, 0x00, 0x00, cipherAes.doFinal(tempPubKeyW)));
         System.out.println(response3);
         
