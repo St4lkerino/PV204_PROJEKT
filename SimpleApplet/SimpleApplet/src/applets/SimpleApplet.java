@@ -229,7 +229,7 @@ public class SimpleApplet extends javacard.framework.Applet {
                         GetHostChallenge(apdu);
                         break;
                     case SESH_KEYS:
-                        SessionKeys(apdu);
+                        sessionKeys(apdu);
                         break;
                     default:
                         // The INS code is not supported by the dispatcher
@@ -283,8 +283,21 @@ public class SimpleApplet extends javacard.framework.Applet {
         }
     }
     
+    void sessionKeys(APDU apdu){
+        // GET DERIVATION DATA
+        byte[] derivData = derivationData(apdu);
+        
+        // DERIVE SESSION ENC KEY
+        
+        
+        // GET DIFFERENT DERIVATION DATA
+        
+        
+        // DERIVE SESSION MAC KEY
+    }
+    
     // Exchange challenges and derive session keys from them, using DH secret
-    void SessionKeys(APDU apdu){
+    byte[] derivationData(APDU apdu){
         byte[] apdubuf = apdu.getBuffer();
         short dataLen = apdu.setIncomingAndReceive();
         byte[] derivData = new byte[16];
@@ -293,16 +306,27 @@ public class SimpleApplet extends javacard.framework.Applet {
         if ((dataLen % 8) != 0) {
             ISOException.throwIt(SW_CIPHER_DATA_LENGTH_BAD);
         }
+        
+        // COPY HOST CHALLENGE TO DERIVATION DATA (2nd and 4th)
         Util.arrayCopy(apdubuf, ISO7816.OFFSET_CDATA, derivData, (short) 4, (short) 4);
         Util.arrayCopy(apdubuf, ISO7816.OFFSET_CDATA, derivData, (short) 12, (short) 4);
         
         // GENERATE CARD CHALLENGE
+        byte[] cardChal = new byte[8];
+        m_secureRandom.nextBytes(cardChal, (short) 0, (short) 8);
         
+        // COPY CARD CHALLENGE TO DERIVATION DATA (1st and 3rd)
+        Util.arrayCopy(cardChal, (short) 0, derivData, (short) 0, (short) 4);
+        Util.arrayCopy(cardChal, (short) 4, derivData, (short) 8, (short) 4);
         
-        // SEND CARD CHALLENGE IN RESPONSE APDU
+        // COPY CARD CHALLENGE INTO RESPONSE APDU
+        Util.arrayCopyNonAtomic(cardChal, (short) 0, apdubuf, ISO7816.OFFSET_CDATA, (short) 8);
+
+        // SEND OUTGOING BUFFER
+        apdu.setOutgoingAndSend(ISO7816.OFFSET_CDATA, (short) 8);
         
+        return derivData;
         
-        // GET SESSION KEYS FROM DERIVATION DATA (CHALLENGES COMBINED)
         
     }
 

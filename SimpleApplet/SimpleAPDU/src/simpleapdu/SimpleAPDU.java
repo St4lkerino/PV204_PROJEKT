@@ -114,11 +114,24 @@ public class SimpleAPDU {
     }
     
     private void sessionKeys(CardManager cardMngr) throws Exception {
+        byte[] derivData = derivationData(cardMngr);
+        System.out.print(Arrays.toString(derivData));
+        
+    }
+    
+    private byte[] derivationData(CardManager cardMngr) throws Exception {
+        byte[] derivData = new byte[16];
         byte[] hostChal = new byte[8];
         SecureRandom.getInstanceStrong().nextBytes(hostChal);
         final ResponseAPDU response = cardMngr.transmit(new CommandAPDU(0xB0, 0x5d, 0x00, 0x00, hostChal));
+        byte[] cardChal = response.getData();
         
+        System.arraycopy(cardChal, 0, derivData, 0, 4);
+        System.arraycopy(hostChal, 0, derivData, 4, 4);
+        System.arraycopy(cardChal, 4, derivData, 8, 4);
+        System.arraycopy(hostChal, 4, derivData, 12, 4);
         
+        return derivData;
     }
     
     private boolean verifyChallenge(Mac mac, byte[] cardPubW, byte[] hostPubW, byte[] cardTempPub, byte[] challenge){
