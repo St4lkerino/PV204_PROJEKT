@@ -52,6 +52,7 @@ public class SimpleApplet extends javacard.framework.Applet {
     private OwnerPIN m_pin = null;
     private AESKey pin = null;
     private KeyPair kp;
+    private KeyPair kp2;
     private ECPrivateKey m_privKey;
     private ECPublicKey m_pubKey;
     private ECPrivateKey m_tempPrivKey;
@@ -297,9 +298,11 @@ public class SimpleApplet extends javacard.framework.Applet {
             //keyAgreement.init(m_privKey);   
             //short secretLen = keyAgreement.generateSecret(apdubuf, (short) ISO7816.OFFSET_CDATA, dataLen, m_ramArray, (short)0);
             
-            kp.genKeyPair();
-            m_tempPrivKey = (ECPrivateKey) kp.getPrivate();
-            m_tempPubKey = (ECPublicKey) kp.getPublic();
+            kp2 = new KeyPair(KeyPair.ALG_EC_FP,
+                    KeyBuilder.LENGTH_EC_FP_128);
+            kp2.genKeyPair();
+            m_tempPrivKey = (ECPrivateKey) kp2.getPrivate();
+            m_tempPubKey = (ECPublicKey) kp2.getPublic();
 
 
             short len = m_pubKey.getW(apdubuf, ISO7816.OFFSET_CDATA);
@@ -356,7 +359,7 @@ public class SimpleApplet extends javacard.framework.Applet {
             short secretLen = keyAgreement.generateSecret(m_tempHostPubW, (short) 0, (short) m_tempHostPubW.length, m_ramArray, (short) 0);
             //KBA V RAM
 
-            short len = m_pubKey.getW(apdubuf, ISO7816.OFFSET_CDATA);
+            short len = m_tempPubKey.getW(apdubuf, ISO7816.OFFSET_CDATA);
             //add hash(Public of card, public of host, KBA, temp of card
             byte[] challenge = GenerateHashChallenge(secretLen);
             

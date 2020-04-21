@@ -150,17 +150,19 @@ public class SimpleAPDU {
         ECPublicKey pubKey = (ECPublicKey) kp.getPublic();
         
         byte temp[] = new byte[255];
-        int len = pubKey.getW(temp,(short) 0);
-        byte pubKeyW[] = new byte[len];
-        len = pubKey.getW(pubKeyW, (short) 0);
+
+        byte pubKeyW[] = new byte[33];
+        int len = pubKey.getW(pubKeyW, (short) 0);
         
         //Send pub key;
         final ResponseAPDU response2 = cardMngr.transmit(new CommandAPDU(0xB0, 0x5a, 0x00, 0x00, pubKeyW));
         System.out.println(response2);
         
-        kp.genKeyPair();
-        ECPrivateKey tempPrivKey = (ECPrivateKey) kp.getPrivate();
-        ECPublicKey tempPubKey = (ECPublicKey) kp.getPublic();
+        KeyPair kp2 = new KeyPair(KeyPair.ALG_EC_FP, 
+                    KeyBuilder.LENGTH_EC_FP_128);
+        kp2.genKeyPair();
+        ECPrivateKey tempPrivKey = (ECPrivateKey) kp2.getPrivate();
+        ECPublicKey tempPubKey = (ECPublicKey) kp2.getPublic();
         byte[] cardPubW = response2.getData();
         
         
@@ -220,8 +222,10 @@ public class SimpleAPDU {
         int secretLen = ka.generateSecret(cardPubW, (short) 0, (short) cardPubW.length, temp, (short) 0);
         byte[] finalSecret = Arrays.copyOfRange(temp, 0, secretLen);
         
+        byte[] cardSecret = response4.getData();
+        
         //DEBUG
-        if (Arrays.equals(response4.getData(), finalSecret)){
+        if (Arrays.equals(cardSecret, finalSecret)){
             System.out.println("Final secrets are the same");
         } else {
             System.out.println("Final secrets are NOT the same");
