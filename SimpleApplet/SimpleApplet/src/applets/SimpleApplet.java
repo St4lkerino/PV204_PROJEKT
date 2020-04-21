@@ -289,7 +289,7 @@ public class SimpleApplet extends javacard.framework.Applet {
         // GET DERIVATION DATA FOR ENC KEY
         byte[] derivData = derivationData(apdu);
         
-        // DERIVE SESSION ENC KEY
+        // DERIVE STATIC ENC KEY (TODO: MOVE IT ELSEWHERE, NOT FOR EVERY SESSION)
         byte[] encKeyHash = new byte[16];
         
         // USE MD5 TO CREATE 16B STATIC ENC KEY
