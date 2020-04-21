@@ -215,14 +215,17 @@ public class SimpleAPDU {
         final ResponseAPDU response4 = cardMngr.transmit(new CommandAPDU(0xB0, 0x5c, 0x00, 0x00, hostChallenge));
         System.out.println(response4);
         
+        ka = KeyAgreement.getInstance(KeyAgreement.ALG_EC_SVDP_DH, false);
+        ka.init(privKey);
+        int secretLen = ka.generateSecret(cardPubW, (short) 0, (short) cardPubW.length, temp, (short) 0);
+        byte[] finalSecret = Arrays.copyOfRange(temp, 0, secretLen);
         
-        
-        
-        
-        
-        
-        
-        
+        //DEBUG
+        if (Arrays.equals(response4.getData(), finalSecret)){
+            System.out.println("Final secrets are the same");
+        } else {
+            System.out.println("Final secrets are NOT the same");
+        }
 
         // </verify>
         int kek = 5;

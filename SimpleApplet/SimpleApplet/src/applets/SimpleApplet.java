@@ -61,6 +61,8 @@ public class SimpleApplet extends javacard.framework.Applet {
     private MessageDigest md5_hash = null;
     private Signature  m_hmac_sha256 = null;
     private HMACKey m_tempSessionHMACKey = null;
+    private short m_maxNumberOfTries = 3;
+    
 
     private KeyAgreement keyAgreement;
 
@@ -378,8 +380,8 @@ public class SimpleApplet extends javacard.framework.Applet {
         short pubWLen = m_pubKey.getW(m_ramArray, (short) m_hostPubW.length);
         
         
-       //add a 0
-       m_ramArray[m_hostPubW.length + pubWLen] = 0x0;
+        //add a 0
+        m_ramArray[m_hostPubW.length + pubWLen] = 0x0;
 
         short totalLength = (short) (m_hostPubW.length + pubWLen + 1);
                 
@@ -398,18 +400,23 @@ public class SimpleApplet extends javacard.framework.Applet {
             Util.arrayCopy(apdubuf, ISO7816.OFFSET_CDATA, hostChallenge, (short) 0, dataLen);
             
             boolean hostChallengeOK = VerifyHostChallenge(hostChallenge);
-            
-            byte[] response = new byte[1];
-            
-            if (hostChallengeOK){
-                apdubuf[ISO7816.OFFSET_CDATA] = 0x01;
-                
-            } else {
-                apdubuf[ISO7816.OFFSET_CDATA] = 0x00;
+
+            if (!hostChallengeOK){
+                //If challenge is not correct
+                m_maxNumberOfTries--;
+                ISOException.throwIt(SW_CIPHER_DATA_LENGTH_BAD);
             }
             
+            keyAgreement = KeyAgreement.getInstance(KeyAgreement.ALG_EC_SVDP_DH, false);
+            keyAgreement.init(m_privKey);
+            short secretLen = keyAgreement.generateSecret(m_hostPubW, (short) 0, (short) m_hostPubW.length, m_ramArray, (short) 0);
+            //FROM HERE ON OUT, THE DERIVED SECRET FROM PUB KEYS IS IN RAM
             
-            apdu.setOutgoingAndSend(ISO7816.OFFSET_CDATA, (short) 1);
+            
+            //DELET THIS 
+            Util.arrayCopy(m_ramArray, (short) 0, apdubuf, ISO7816.OFFSET_CDATA, secretLen);
+            apdu.setOutgoingAndSend(ISO7816.OFFSET_CDATA, (short) secretLen);
+            //DELET THAT ^
                      
             
         } catch (Exception e) {
