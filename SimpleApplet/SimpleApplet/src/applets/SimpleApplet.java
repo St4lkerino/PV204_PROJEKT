@@ -63,7 +63,7 @@ public class SimpleApplet extends javacard.framework.Applet {
     private MessageDigest md5_hash = null;
     private Signature  m_hmac_sha256 = null;
     private HMACKey m_tempSessionHMACKey = null;
-    private DESKey m_staticEncKey = null;
+    private AESKey m_staticEncKey = null;
     
     private short m_maxNumberOfTries = 3;
     
@@ -286,13 +286,17 @@ public class SimpleApplet extends javacard.framework.Applet {
     }
     
     void sessionKeys(APDU apdu){
-        // GET DERIVATION DATA
+        // GET DERIVATION DATA FOR ENC KEY
         byte[] derivData = derivationData(apdu);
         
         // DERIVE SESSION ENC KEY
-        m_staticEncKey = 
+        byte[] encKeyHash = new byte[16];
         
-        // GET DIFFERENT DERIVATION DATA
+        // USE MD5 TO CREATE 16B STATIC ENC KEY
+        m_hash.doFinal(m_ramArray, (short) 0, (short) 20, encKeyHash, (short) 0);
+        m_staticEncKey.setKey(encKeyHash, (short) 0);
+        
+        // GET DERIVATION DATA FOR MAC KEY
         
         
         // DERIVE SESSION MAC KEY
