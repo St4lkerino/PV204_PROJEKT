@@ -10,9 +10,11 @@ import java.security.MessageDigest;
 import javax.crypto.Cipher;
 import java.security.spec.InvalidKeySpecException;
 import java.security.spec.KeySpec;
+import java.util.Arrays;
 import javacard.security.*;
 import java.util.Scanner;
 import javax.crypto.SecretKeyFactory;
+import javax.crypto.spec.IvParameterSpec;
 import javax.crypto.spec.PBEKeySpec;
 import javax.crypto.spec.SecretKeySpec;
 
@@ -145,7 +147,13 @@ public class SimpleAPDU {
         SecretKeySpec secretKeySpec = new SecretKeySpec(key, "AES");
         
         Cipher cipherAes = Cipher.getInstance("AES/CBC/NoPadding");
-        cipherAes.init(Cipher.ENCRYPT_MODE, secretKeySpec);
+        
+        // Set IV to 0
+        byte[] ivArray = new byte[16];
+        Arrays.fill(ivArray, (byte)0);
+        IvParameterSpec ivSpec = new IvParameterSpec(ivArray);
+        
+        cipherAes.init(Cipher.ENCRYPT_MODE, secretKeySpec, ivSpec);
 
         
         SecureRandom random = new SecureRandom();
@@ -156,6 +164,8 @@ public class SimpleAPDU {
             tempPubKeyW[i] = (byte) random.nextInt(); // against offline
         }
           
+        
+        byte[] iv = cipherAes.getIV();
         final ResponseAPDU response3 = cardMngr.transmit(new CommandAPDU(0xB0, 0x5b, 0x00, 0x00, cipherAes.doFinal(tempPubKeyW)));
         System.out.println(response3);
         

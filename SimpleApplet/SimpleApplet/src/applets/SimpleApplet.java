@@ -336,7 +336,7 @@ public class SimpleApplet extends javacard.framework.Applet {
             if ((dataLen % 16) != 0) {
                 ISOException.throwIt(SW_CIPHER_DATA_LENGTH_BAD);
             }
-
+            
             short hostWLen = m_decryptCipher.doFinal(apdubuf, ISO7816.OFFSET_CDATA, dataLen, m_ramArray, (short) 0);
 
             m_tempHostPubW = new byte[33];
