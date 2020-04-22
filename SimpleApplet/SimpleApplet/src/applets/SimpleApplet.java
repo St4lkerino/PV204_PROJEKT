@@ -4,6 +4,8 @@ import javacard.framework.*;
 import javacard.security.*;
 import javacardx.crypto.*;
 
+
+
 public class SimpleApplet extends javacard.framework.Applet {
 
     // MAIN INSTRUCTION CLASS
@@ -65,6 +67,8 @@ public class SimpleApplet extends javacard.framework.Applet {
     private HMACKey m_tempSessionHMACKey = null;
     private AESKey m_staticEncKey = null;
     private AESKey m_sessionEncKey = null;
+    private Cipher m_staticEncCipher = null;
+    
     
     private short m_maxNumberOfTries = 3;
     
@@ -232,7 +236,7 @@ public class SimpleApplet extends javacard.framework.Applet {
                         GetHostChallenge(apdu);
                         break;
                     case SESH_KEYS:
-                        sessionKeys(apdu);
+                        sessionEncKey(apdu);
                         break;
                     default:
                         // The INS code is not supported by the dispatcher
@@ -286,7 +290,7 @@ public class SimpleApplet extends javacard.framework.Applet {
         }
     }
     
-    void sessionKeys(APDU apdu){
+    void sessionEncKey(APDU apdu){
         // GET DERIVATION DATA FOR ENC KEY
         byte[] derivData = derivationData(apdu);
         
@@ -294,15 +298,30 @@ public class SimpleApplet extends javacard.framework.Applet {
         byte[] encKeyHash = new byte[16];
         
         // USE MD5 TO CREATE 16B STATIC ENC KEY (TODO: USE SOMETHING ELSE THAN MD5)
-        m_hash.doFinal(m_ramArray, (short) 0, (short) 20, encKeyHash, (short) 0);
-        m_staticEncKey.setKey(encKeyHash, (short) 0);
+        md5_hash = MessageDigest.getInstance(MessageDigest.ALG_MD5, false);
+        int len = md5_hash.doFinal(m_ramArray, (short) 0, (short) 20, encKeyHash, (short) 0);
         
         // DERIVE SESSION ENC KEY
+        m_staticEncKey = (AESKey) KeyBuilder.buildKey(KeyBuilder.TYPE_AES, (short) 128, true);
+        m_staticEncKey.setKey(encKeyHash, (short) 0);
+        m_staticEncCipher = Cipher.getInstance(Cipher.ALG_AES_BLOCK_128_CBC_NOPAD, false);
+        m_staticEncCipher.init(m_staticEncKey, Cipher.MODE_ENCRYPT);
+        
+        byte[] sessKey = new byte[16];
+        m_staticEncCipher.doFinal(derivData, (short) 0, (short) 16, sessKey, (short) 0);
+        m_sessionEncKey = (AESKey) KeyBuilder.buildKey(KeyBuilder.TYPE_AES, (short) 128, true);
+        m_sessionEncKey.setKey(sessKey, (short) 0);
+        
+        
         
         // GET DERIVATION DATA FOR MAC KEY
         
         
         // DERIVE SESSION MAC KEY
+    }
+    
+    void sessionMacKey(APDU apdu){
+        
     }
     
     // Exchange challenges and derive session keys from them, using DH secret
@@ -476,7 +495,7 @@ public class SimpleApplet extends javacard.framework.Applet {
             
             
             //DELET THIS 
-            //Util.arrayCopy(m_ramArray, (short) 0, apdubuf, ISO7816.OFFSET_CDATA, secretLen);
+            Util.arrayCopy(m_ramArray, (short) 0, apdubuf, ISO7816.OFFSET_CDATA, secretLen);
             apdu.setOutgoingAndSend(ISO7816.OFFSET_CDATA, (short) secretLen);
             //DELET THAT ^
                      
