@@ -64,7 +64,6 @@ public class SimpleApplet extends javacard.framework.Applet {
     private Signature  m_hmac_sha256 = null;
     private HMACKey m_tempSessionHMACKey = null;
     private AESKey m_staticEncKey = null;
-    private AESKey m_sessionEncKey = null;
     
     private short m_maxNumberOfTries = 3;
     
@@ -293,11 +292,9 @@ public class SimpleApplet extends javacard.framework.Applet {
         // DERIVE STATIC ENC KEY (TODO: MOVE IT ELSEWHERE, NOT FOR EVERY SESSION)
         byte[] encKeyHash = new byte[16];
         
-        // USE MD5 TO CREATE 16B STATIC ENC KEY (TODO: USE SOMETHING ELSE THAN MD5)
+        // USE MD5 TO CREATE 16B STATIC ENC KEY
         m_hash.doFinal(m_ramArray, (short) 0, (short) 20, encKeyHash, (short) 0);
         m_staticEncKey.setKey(encKeyHash, (short) 0);
-        
-        // DERIVE SESSION ENC KEY
         
         // GET DERIVATION DATA FOR MAC KEY
         
