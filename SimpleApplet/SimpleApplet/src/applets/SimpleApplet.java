@@ -25,8 +25,9 @@ public class SimpleApplet extends javacard.framework.Applet {
     final static byte INS_EXCHANGE_PUBS = (byte) 0x5a;
     final static byte INS_GET_HOST_TMP_PUB = (byte) 0x5b;
     final static byte INS_GET_HOST_CHALLENGE = (byte) 0x5c;
-    final static byte S_ENC_KEY = (byte) 0x5d;
-    final static byte S_MAC_KEY = (byte) 0x5e;
+    final static byte INS_ENC_KEY = (byte) 0x5d;
+    final static byte INS_MAC_KEY = (byte) 0x5e;
+    final static byte INS_PROCESS_PROTECTED = (byte) 0x5f;
 
     final static short ARRAY_LENGTH = (short) 0xff;
     final static byte AES_BLOCK_LENGTH = (short) 0x16;
@@ -36,6 +37,7 @@ public class SimpleApplet extends javacard.framework.Applet {
     final static short SW_CIPHER_DATA_LENGTH_BAD = (short) 0x6710;
     final static short SW_OBJECT_NOT_AVAILABLE = (short) 0x6711;
     final static short SW_BAD_PIN = (short) 0x6900;
+    final static short SW_BAD_SIGNATURE = (short) 0x6901;
 
     final static short SW_Exception = (short) 0xff01;
     final static short SW_ArrayIndexOutOfBoundsException = (short) 0xff02;
@@ -75,7 +77,6 @@ public class SimpleApplet extends javacard.framework.Applet {
     
     
     private short m_maxNumberOfTries = 3;
-    
 
     private KeyAgreement keyAgreement;
 
@@ -143,7 +144,6 @@ public class SimpleApplet extends javacard.framework.Applet {
 
             md5_hash.doFinal(buffer, dataOffset, buffer[dataOffset - 1], m_ramArray, (short) 0);
             pin.setKey(m_ramArray, (short) 0);
-            m_decryptCipher.init(pin, Cipher.MODE_DECRYPT);
             m_secureRandom.nextBytes(m_ramArray, (short) 0, (short) 16);
 
             // update flag
@@ -200,38 +200,12 @@ public class SimpleApplet extends javacard.framework.Applet {
         if (selectingApplet()) {
             return;
         }
-
+        
         try {
             // APDU instruction parser
             if (apduBuffer[ISO7816.OFFSET_CLA] == CLA_SIMPLEAPPLET) {
+                // These are only supported outside protected channel
                 switch (apduBuffer[ISO7816.OFFSET_INS]) {
-                    case INS_ENCRYPT:
-                        Encrypt(apdu);
-                        break;
-                    case INS_DECRYPT:
-                        Decrypt(apdu);
-                        break;
-                    case INS_HASH:
-                        Hash(apdu);
-                        break;
-                    case INS_RANDOM:
-                        Random(apdu);
-                        break;
-                    case INS_VERIFYPIN:
-                        VerifyPIN(apdu);
-                        break;
-                    case INS_SETPIN:
-                        SetPIN(apdu);
-                        break;
-                    case INS_RETURNDATA:
-                        ReturnData(apdu);
-                        break;
-                    case INS_SIGNDATA:
-                        //Sign(apdu);
-                        break;
-                    case INS_KEYPAIR:
-                        GenerateKeyPair(apdu);
-                        break;
                     case INS_EXCHANGE_PUBS:
                         ExchangePubKeys(apdu);
                         break;
@@ -241,15 +215,14 @@ public class SimpleApplet extends javacard.framework.Applet {
                     case INS_GET_HOST_CHALLENGE:
                         GetHostChallenge(apdu);
                         break;
-                    case S_ENC_KEY:
+                    case INS_ENC_KEY:
                         sessionEncKey(apdu);
                         break;
-                    case S_MAC_KEY:
+                    case INS_MAC_KEY:
                         sessionMacKey(apdu);
                         break;
-                    default:
-                        // The INS code is not supported by the dispatcher
-                        ISOException.throwIt(ISO7816.SW_INS_NOT_SUPPORTED);
+                    case INS_PROCESS_PROTECTED:
+                        processProtected(apdu);
                         break;
                 }
             } else {
@@ -283,7 +256,48 @@ public class SimpleApplet extends javacard.framework.Applet {
             ISOException.throwIt(SW_Exception);
         }
     }
+    
+    
+    public byte[] process(byte[] apduBuffer) throws ISOException {
+        // These are supported inside nad outside protected
+        switch (apduBuffer[ISO7816.OFFSET_INS]) {
+            case INS_RETURNDATA:
+                return ReturnData(apduBuffer);
+            default:
+                // The INS code is not supported by the dispatcher
+                ISOException.throwIt(ISO7816.SW_INS_NOT_SUPPORTED);
+                break;
+        }
+        return null;
+    }
 
+    void processProtected(APDU apdu) {
+        byte[] apdubuf = apdu.getBuffer();
+        short dataLen = (short) apdu.setIncomingAndReceive();
+        
+        byte[] signedData = new byte[dataLen];
+        Util.arrayCopy(apdubuf, (short) (ISO7816.OFFSET_CDATA), signedData, (short) 0, (short) dataLen);
+        
+        //short dataLen = (short) (apdubuf.length - 32);
+        if (!Verify(signedData)) {
+            ISOException.throwIt(SW_BAD_SIGNATURE);
+        }
+        byte[] encryptedData = new byte[dataLen - 32];
+        System.arraycopy(signedData, 0, encryptedData, 0, (short)(dataLen - 32));
+        byte[] decryptedData = Decrypt(encryptedData);
+        
+        byte[] returnedData = process(decryptedData);
+        if (returnedData == null) {
+            return;
+        }
+        short len = (short) returnedData.length;
+        
+        encryptedData = Encrypt(returnedData);
+        signedData = Sign(encryptedData);
+        Util.arrayCopyNonAtomic(signedData, (short) 0, apdubuf, ISO7816.OFFSET_CDATA, (short) (len + 32));
+        apdu.setOutgoingAndSend(ISO7816.OFFSET_CDATA, (short) (len + 32));
+    }
+    
     void clearSessionData() {
         // E.g., fill sesssion data in RAM with zeroes
         Util.arrayFillNonAtomic(m_ramArray, (short) 0, (short) m_ramArray.length, (byte) 0);
@@ -320,7 +334,6 @@ public class SimpleApplet extends javacard.framework.Applet {
         m_sessionMacKey.setKey(sessKey, (short) 0, (short) 16);
         m_sign.init(m_sessionMacKey, Signature.MODE_SIGN);
         m_verify.init(m_sessionMacKey, Signature.MODE_VERIFY);
-        
     }
     
     void sessionEncKey(APDU apdu){
@@ -446,6 +459,7 @@ public class SimpleApplet extends javacard.framework.Applet {
                 ISOException.throwIt(SW_CIPHER_DATA_LENGTH_BAD);
             }
             
+            m_decryptCipher.init(pin, Cipher.MODE_DECRYPT);
             short hostWLen = m_decryptCipher.doFinal(apdubuf, ISO7816.OFFSET_CDATA, dataLen, m_ramArray, (short) 0);
 
             m_tempHostPubW = new byte[33];
@@ -528,44 +542,42 @@ public class SimpleApplet extends javacard.framework.Applet {
     }
 
     // ENCRYPT INCOMING BUFFER
-    void Encrypt(APDU apdu) {
-        byte[] apdubuf = apdu.getBuffer();
-        short dataLen = apdu.setIncomingAndReceive();
+    byte[] Encrypt(byte[] data) {
+        short dataLen = (short) data.length;
+        byte[] encryptedData = new byte[dataLen];
 
         // CHECK EXPECTED LENGTH (MULTIPLY OF AES BLOCK LENGTH)
         if ((dataLen % 16) != 0) {
             ISOException.throwIt(SW_CIPHER_DATA_LENGTH_BAD);
         }
 
+        m_encryptCipher.init(m_sessionEncKey, Cipher.MODE_ENCRYPT);
         // ENCRYPT INCOMING BUFFER
-        m_encryptCipher.doFinal(apdubuf, ISO7816.OFFSET_CDATA, dataLen, m_ramArray, (short) 0);
+        m_encryptCipher.doFinal(data, (short)0, dataLen, m_ramArray, (short) 0);
         // NOTE: In-place encryption directly with apdubuf as output can be performed. m_ramArray used to demonstrate Util.arrayCopyNonAtomic
 
-        // COPY ENCRYPTED DATA INTO OUTGOING BUFFER
-        Util.arrayCopyNonAtomic(m_ramArray, (short) 0, apdubuf, ISO7816.OFFSET_CDATA, dataLen);
-
-        // SEND OUTGOING BUFFER
-        apdu.setOutgoingAndSend(ISO7816.OFFSET_CDATA, dataLen);
+        // COPY ENCRYPTED DATA
+        Util.arrayCopyNonAtomic(m_ramArray, (short) 0, encryptedData, (short) 0, dataLen);
+        return encryptedData;
     }
 
     // DECRYPT INCOMING BUFFER
-    void Decrypt(APDU apdu) {
-        byte[] apdubuf = apdu.getBuffer();
-        short dataLen = apdu.setIncomingAndReceive();
+    byte[] Decrypt(byte[] data) {
+        short dataLen = (short) data.length;
+        byte[] decryptedData = new byte[dataLen];
 
         // CHECK EXPECTED LENGTH (MULTIPLY OF AES BLOCK LENGTH)
         if ((dataLen % 16) != 0) {
             ISOException.throwIt(SW_CIPHER_DATA_LENGTH_BAD);
         }
 
+        m_decryptCipher.init(m_sessionEncKey, Cipher.MODE_DECRYPT);
         // ENCRYPT INCOMING BUFFER
-        m_decryptCipher.doFinal(apdubuf, ISO7816.OFFSET_CDATA, dataLen, m_ramArray, (short) 0);
+        m_decryptCipher.doFinal(data, (short)0, dataLen, m_ramArray, (short) 0);
 
         // COPY ENCRYPTED DATA INTO OUTGOING BUFFER
-        Util.arrayCopyNonAtomic(m_ramArray, (short) 0, apdubuf, ISO7816.OFFSET_CDATA, dataLen);
-
-        // SEND OUTGOING BUFFER
-        apdu.setOutgoingAndSend(ISO7816.OFFSET_CDATA, dataLen);
+        Util.arrayCopyNonAtomic(m_ramArray, (short) 0, decryptedData, (short) 0, dataLen);
+        return decryptedData;
     }
 
     // HASH INCOMING BUFFER
@@ -620,12 +632,9 @@ public class SimpleApplet extends javacard.framework.Applet {
         m_pin.update(apdubuf, ISO7816.OFFSET_CDATA, (byte) dataLen);
     }
 
-    // RETURN INPU DATA UNCHANGED
-    void ReturnData(APDU apdu) {
-        byte[] apdubuf = apdu.getBuffer();
-        short dataLen = apdu.setIncomingAndReceive();
-
-        apdu.setOutgoingAndSend(ISO7816.OFFSET_CDATA, dataLen);
+    // RETURN INPUT DATA UNCHANGED
+    byte[] ReturnData(byte[] apdubuf) {
+        return apdubuf;
     }
 
     byte[] Sign(byte[] data) {
@@ -646,6 +655,6 @@ public class SimpleApplet extends javacard.framework.Applet {
     
     boolean Verify(byte[] signedData){
         short dataLen = (short) (signedData.length - 32);
-        return m_verify.verify(signedData, (short) 0, dataLen, signedData, dataLen, (short) 32);
+        return m_verify.verify(signedData, (short) 0, dataLen, signedData, (short)dataLen, (short) 32);
     }
 }
