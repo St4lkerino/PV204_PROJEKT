@@ -31,6 +31,8 @@ public class SimpleAPDU {
     
     private byte[] staticEncKey;
     Mac sha = null;
+    Cipher aesE = null;
+    Cipher aesD = null;
     
 
 
@@ -82,6 +84,8 @@ public class SimpleAPDU {
         byte[] sessionEncKey = new byte[16];
         byte[] sessionMacKey = new byte[16];
         sha = Mac.getInstance("HmacSHA256");
+        aesE = Cipher.getInstance("AES/CBC/NoPadding");
+        aesD = Cipher.getInstance("AES/CBC/NoPadding");
         SecretKeySpec mac = null;
         
         // Connect to first available card
@@ -116,6 +120,27 @@ public class SimpleAPDU {
             mac = new SecretKeySpec(sessionMacKey, "HmacSHA256");
             sha.init(mac);
             
+            byte[] ivArray = new byte[16];
+            Arrays.fill(ivArray, (byte)0);
+            SecretKeySpec keyspec = new SecretKeySpec(sessionEncKey, "AES");
+            IvParameterSpec ivspec = new IvParameterSpec(ivArray);
+            aesD.init(Cipher.DECRYPT_MODE, keyspec, ivspec);
+            aesE.init(Cipher.ENCRYPT_MODE, keyspec, ivspec);
+            
+            // send over protected channel for card to send back ffffffffffffffffffffffff 
+            byte[] data = Util.hexStringToByteArray("B0570000ffffffffffffffffffffffff");
+            byte[] encryptedData = aesE.doFinal(data);
+            byte[] signedData = sign(encryptedData);
+            
+            // Transmit single APDU over secure channel
+            final ResponseAPDU response = cardMngr.transmit(new CommandAPDU(0xB0, 0x5f, 0x00, 0x00, signedData));
+            
+            byte[] responseData = response.getData();
+            if (verify(responseData)) {
+                byte[] encryptedResponse = new byte[responseData.length - 32];
+                System.arraycopy(responseData, 0, encryptedResponse, 0, responseData.length - 32);
+                byte[] decryptedResponse = aesD.doFinal(encryptedResponse);
+            }
             
             cardMngr.Disconnect(false);
             return 0;
@@ -307,6 +332,24 @@ public class SimpleAPDU {
         System.arraycopy(signedData, (short) 0, data, (short) 0, dataLen);
         byte[] digest = sha.doFinal(data);
         return Arrays.equals(digest, signature);
+    }
+    
+    byte[] encrypt(byte[] data) throws Exception {
+        short dataLen = (short) data.length;
+        byte[] encryptedData = new byte[dataLen];
+        
+        
+        
+        return encryptedData;
+    }
+    
+    byte[] decrypt(byte[] data) throws Exception {
+        short dataLen = (short) data.length;
+        byte[] decryptedData = new byte[dataLen];
+        
+        
+        
+        return decryptedData;
     }
     
     /*
