@@ -260,8 +260,8 @@ public class SimpleApplet extends javacard.framework.Applet {
     }
     
     
-    public short process(byte[] apduBuffer) throws ISOException {
-        // These are supported both inside nad outside protected
+    public byte[] process(byte[] apduBuffer) throws ISOException {
+        // These are supported inside nad outside protected
         switch (apduBuffer[ISO7816.OFFSET_INS]) {
             case INS_RETURNDATA:
                 return ReturnData(apduBuffer);
@@ -270,7 +270,7 @@ public class SimpleApplet extends javacard.framework.Applet {
                 ISOException.throwIt(ISO7816.SW_INS_NOT_SUPPORTED);
                 break;
         }
-        return (short) 0;
+        return null;
     }
 
     void processProtected(APDU apdu) {
@@ -289,14 +289,12 @@ public class SimpleApplet extends javacard.framework.Applet {
         System.arraycopy(signedData, 0, encryptedData, 0, (short)(dataLen - 32));
         byte[] decryptedData = Decrypt(encryptedData);
         
-        short len = process(decryptedData);
-        
-        if (len <= 0) {
+        byte[] returnedData = process(decryptedData);
+        if (returnedData == null) {
             return;
         }
+        short len = (short) returnedData.length;
         
-        byte[] returnedData = new byte[dataLen];
-        Util.arrayCopy(apdubuf, (short) (ISO7816.OFFSET_CDATA), returnedData, (short) 0, (short) len);
         encryptedData = Encrypt(returnedData);
         signedData = Sign(encryptedData);
         Util.arrayCopyNonAtomic(signedData, (short) 0, apdubuf, ISO7816.OFFSET_CDATA, (short) (len + 32));
@@ -638,9 +636,8 @@ public class SimpleApplet extends javacard.framework.Applet {
     }
 
     // RETURN INPUT DATA UNCHANGED
-    short ReturnData(byte[] apdubuf) {
-        short dataLen = (short) apdubuf.length;
-        return dataLen;
+    byte[] ReturnData(byte[] apdubuf) {
+        return apdubuf;
     }
 
     byte[] Sign(byte[] data) {

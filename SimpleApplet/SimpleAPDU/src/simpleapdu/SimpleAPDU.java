@@ -140,6 +140,7 @@ public class SimpleAPDU {
                 byte[] encryptedResponse = new byte[responseData.length - 32];
                 System.arraycopy(responseData, 0, encryptedResponse, 0, responseData.length - 32);
                 byte[] decryptedResponse = aesD.doFinal(encryptedResponse);
+                System.out.println(Arrays.toString(decryptedResponse));
             }
             
             cardMngr.Disconnect(false);
