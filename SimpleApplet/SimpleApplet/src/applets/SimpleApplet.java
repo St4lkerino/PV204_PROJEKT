@@ -77,7 +77,6 @@ public class SimpleApplet extends javacard.framework.Applet {
     
     
     private short m_maxNumberOfTries = 3;
-    private boolean m_protectedChannel = false;
 
     private KeyAgreement keyAgreement;
 
@@ -196,7 +195,6 @@ public class SimpleApplet extends javacard.framework.Applet {
     public void process(APDU apdu) throws ISOException {
         // get the buffer with incoming APDU
         byte[] apduBuffer = apdu.getBuffer();
-        m_protectedChannel = false;
 
         // ignore the applet select command dispached to the process
         if (selectingApplet()) {
@@ -276,7 +274,6 @@ public class SimpleApplet extends javacard.framework.Applet {
     void processProtected(APDU apdu) {
         byte[] apdubuf = apdu.getBuffer();
         short dataLen = (short) apdu.setIncomingAndReceive();
-        m_protectedChannel = true;
         
         byte[] signedData = new byte[dataLen];
         Util.arrayCopy(apdubuf, (short) (ISO7816.OFFSET_CDATA), signedData, (short) 0, (short) dataLen);
