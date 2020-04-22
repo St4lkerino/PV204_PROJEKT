@@ -38,6 +38,7 @@ public class SimpleApplet extends javacard.framework.Applet {
     final static short SW_OBJECT_NOT_AVAILABLE = (short) 0x6711;
     final static short SW_BAD_PIN = (short) 0x6900;
     final static short SW_BAD_SIGNATURE = (short) 0x6901;
+    final static short SW_BAD_NONCE = (short) 0x6902;
 
     final static short SW_Exception = (short) 0xff01;
     final static short SW_ArrayIndexOutOfBoundsException = (short) 0xff02;
@@ -74,6 +75,7 @@ public class SimpleApplet extends javacard.framework.Applet {
     private AESKey m_sessionEncKey = null;
     private HMACKey m_sessionMacKey = null;
     private Cipher m_staticEncCipher = null;
+    private byte[] nonce = new byte[32];
     
     
     private short m_maxNumberOfTries = 3;
@@ -285,14 +287,17 @@ public class SimpleApplet extends javacard.framework.Applet {
         byte[] encryptedData = new byte[dataLen - 32];
         System.arraycopy(signedData, 0, encryptedData, 0, (short)(dataLen - 32));
         byte[] decryptedData = Decrypt(encryptedData);
+        byte[] withoutNonce = verifyNonce(decryptedData);
         
-        byte[] returnedData = process(decryptedData);
+        byte[] returnedData = process(withoutNonce);
         if (returnedData == null) {
             return;
         }
         short len = (short) returnedData.length;
+        byte[] returnedWithNonce = addNonce(returnedData);
+        len += 32;
         
-        encryptedData = Encrypt(returnedData);
+        encryptedData = Encrypt(returnedWithNonce);
         signedData = Sign(encryptedData);
         Util.arrayCopyNonAtomic(signedData, (short) 0, apdubuf, ISO7816.OFFSET_CDATA, (short) (len + 32));
         apdu.setOutgoingAndSend(ISO7816.OFFSET_CDATA, (short) (len + 32));
@@ -305,12 +310,29 @@ public class SimpleApplet extends javacard.framework.Applet {
         m_secureRandom.generateData(m_ramArray, (short) 0, (short) m_ramArray.length);
     }
 
-    void GenerateKeyPair(APDU apdu) {
-        try {
-
-        } catch (Exception e) {
-            ISOException.throwIt((short) 0xFFD1);
+    byte[] verifyNonce(byte[] data){
+        short dataLen = (short) (data.length - 32); 
+        short good = Util.arrayCompare(data, dataLen, nonce, (short) 0, (short) 32);
+        if (good != 0){
+            ISOException.throwIt(SW_BAD_NONCE);
+            
         }
+        // UPDATE NONCE
+        m_sign.sign(nonce, (short) 0, (short) 32, nonce, (short) 0);
+        
+        // GET DATA
+        byte[] withoutNonce = new byte[dataLen];
+        Util.arrayCopy(data, (short) 0, withoutNonce, (short) 0, dataLen);
+        return withoutNonce;
+    }
+    
+    byte[] addNonce(byte[] data){
+        short dataLen = (short) data.length;
+        byte[] withNonce = new byte[(short) (dataLen + 32)];
+        Util.arrayCopy(data, (short) 0, withNonce, (short) 0, dataLen);
+        // ADD NONCE
+        Util.arrayCopy(nonce, (short) 0, withNonce, dataLen, (short) 32);
+        return withNonce;
     }
     
     void sessionMacKey(APDU apdu){
@@ -334,6 +356,10 @@ public class SimpleApplet extends javacard.framework.Applet {
         m_sessionMacKey.setKey(sessKey, (short) 0, (short) 16);
         m_sign.init(m_sessionMacKey, Signature.MODE_SIGN);
         m_verify.init(m_sessionMacKey, Signature.MODE_VERIFY);
+        
+        // DERIVE FIRST NONCE
+        m_sign.sign(derivData, (short) 0, (short) 16, nonce, (short) 0);
+        
     }
     
     void sessionEncKey(APDU apdu){

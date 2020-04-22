@@ -83,7 +83,8 @@ public class SimpleAPDU {
         final CardManager cardMngr = new CardManager(true, APPLET_AID_BYTE);
         byte[] sessionEncKey = new byte[16];
         byte[] sessionMacKey = new byte[16];
-        byte[] fresh = new byte[32];
+        byte[] nonceDerivData = new byte[16];
+        byte[] nonce = new byte[32];
         sha = Mac.getInstance("HmacSHA256");
         SecretKeySpec mac;
         aesE = Cipher.getInstance("AES/CBC/NoPadding");
@@ -115,11 +116,12 @@ public class SimpleAPDU {
             }
             
             ecdh(cardMngr, PIN);
-            sessionEncKey = sessionKey(cardMngr, true);
-            sessionMacKey = sessionKey(cardMngr, false);
+            sessionEncKey = sessionKey(cardMngr, true, nonceDerivData);
+            sessionMacKey = sessionKey(cardMngr, false, nonceDerivData);
             
             mac = new SecretKeySpec(sessionMacKey, "HmacSHA256");
             sha.init(mac);
+            nonce = sha.doFinal(nonceDerivData);
             
             byte[] ivArray = new byte[16];
             Arrays.fill(ivArray, (byte)0);
@@ -130,7 +132,13 @@ public class SimpleAPDU {
             
             // send over protected channel for card to send back ffffffffffffffffffffffff 
             byte[] data = Util.hexStringToByteArray("B0570000ffffffffffffffffffffffff");
-            byte[] encryptedData = aesE.doFinal(data);
+            byte[] dataWithNonce = addNonce(data, nonce);
+            
+            // update nonce
+            nonce = sha.doFinal(nonce);
+            // encrypt data + nonce
+            byte[] encryptedData = aesE.doFinal(dataWithNonce);
+            // sign
             byte[] signedData = sign(encryptedData);
             
             // Transmit single APDU over secure channel
@@ -141,7 +149,15 @@ public class SimpleAPDU {
                 byte[] encryptedResponse = new byte[responseData.length - 32];
                 System.arraycopy(responseData, 0, encryptedResponse, 0, responseData.length - 32);
                 byte[] decryptedResponse = aesD.doFinal(encryptedResponse);
-                System.out.println(Arrays.toString(decryptedResponse));
+                if(verifyNonce(decryptedResponse, nonce)){
+                    // Remove nonce
+                    byte[] withoutNonce = new byte[decryptedResponse.length - 32];
+                    System.arraycopy(decryptedResponse, 0, withoutNonce, 0, decryptedResponse.length - 32);
+                    System.out.println(Arrays.toString(withoutNonce));
+                } else {
+                    System.out.println("Bad nonce.");
+                }
+                
             }
             
             cardMngr.Disconnect(false);
@@ -155,8 +171,13 @@ public class SimpleAPDU {
      * @return
      * @throws Exception 
      */
-    private byte[] sessionKey(CardManager cardMngr, boolean enc) throws Exception {
+    private byte[] sessionKey(CardManager cardMngr, boolean enc, byte[] nonceDerivData) throws Exception {
         byte[] derivData = derivationData(cardMngr, enc);
+        
+        // Get derivation data for freshness nonce when generating MAC key
+        if (!enc){
+            System.arraycopy(derivData, 0, nonceDerivData, 0, 16);
+        }
         
         MessageDigest digest = MessageDigest.getInstance("MD5");
         byte[] encKeyHash = digest.digest(staticEncKey);
@@ -352,6 +373,26 @@ public class SimpleAPDU {
         
         
         return decryptedData;
+    }
+    
+    boolean verifyNonce(byte[] data, byte[] nonce){
+        short noncePos = (short) (data.length - 32); 
+        byte[] cardNonce = new byte[32];
+        System.arraycopy(data, noncePos, cardNonce, (short) 0, (short) 32);
+        boolean good = Arrays.equals(nonce, cardNonce);
+        if (!good){
+            return false;
+        }
+        return true;
+    }
+    
+    byte[] addNonce(byte[] data, byte[] nonce){
+        short dataLen = (short) data.length;
+        byte[] withNonce = new byte[(short) 32 + dataLen];
+        System.arraycopy(data, (short) 0, withNonce, (short) 0, dataLen);
+        // ADD NONCE AFTER OG DATA
+        System.arraycopy(nonce, (short) 0, withNonce, dataLen, (short) 32);
+        return withNonce;
     }
     
     /*
