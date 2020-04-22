@@ -81,8 +81,9 @@ public class SimpleAPDU {
         final CardManager cardMngr = new CardManager(true, APPLET_AID_BYTE);
         byte[] sessionEncKey = new byte[16];
         byte[] sessionMacKey = new byte[16];
+        byte[] fresh = new byte[32];
         sha = Mac.getInstance("HmacSHA256");
-        SecretKeySpec mac = null;
+        SecretKeySpec mac;
         
         // Connect to first available card
             System.out.print("Connecting to card...");
