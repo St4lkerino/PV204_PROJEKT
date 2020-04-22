@@ -80,6 +80,8 @@ public class SimpleAPDU {
     public int session(RunConfig runCfg) throws Exception{
         
         final CardManager cardMngr = new CardManager(true, APPLET_AID_BYTE);
+        byte[] sessionEncKey = new byte[16];
+        byte[] sessionMacKey = new byte[16];
         
         // Connect to first available card
             System.out.print("Connecting to card...");
@@ -107,23 +109,53 @@ public class SimpleAPDU {
             }
             
             ecdh(cardMngr, PIN);
-            sessionKeys(cardMngr);
+            sessionEncKey = sessionKey(cardMngr, true);
+            sessionMacKey = sessionKey(cardMngr, false);
             
             cardMngr.Disconnect(false);
             return 0;
     }
     
-    private void sessionKeys(CardManager cardMngr) throws Exception {
-        byte[] derivData = derivationData(cardMngr);
-        System.out.print(Arrays.toString(derivData));
+    /**
+     * 
+     * @param cardMngr Card manager
+     * @param enc true if we want Applet to produce ENC key, false if MAC
+     * @return
+     * @throws Exception 
+     */
+    private byte[] sessionKey(CardManager cardMngr, boolean enc) throws Exception {
+        byte[] derivData = derivationData(cardMngr, enc);
+        
+        MessageDigest digest = MessageDigest.getInstance("MD5");
+        byte[] encKeyHash = digest.digest(staticEncKey);
+        
+        // DERIVE SESSION KEY
+        SecretKeySpec secretKeySpec = new SecretKeySpec(encKeyHash, "AES");
+        
+        Cipher cipherAes = Cipher.getInstance("AES/CBC/NoPadding");
+        
+        // Set IV to 0
+        byte[] ivArray = new byte[16];
+        Arrays.fill(ivArray, (byte)0);
+        IvParameterSpec ivSpec = new IvParameterSpec(ivArray);
+        
+        cipherAes.init(Cipher.ENCRYPT_MODE, secretKeySpec, ivSpec);
+        return cipherAes.doFinal(derivData);
+        
         
     }
     
-    private byte[] derivationData(CardManager cardMngr) throws Exception {
+    private byte[] derivationData(CardManager cardMngr, boolean enc) throws Exception {
         byte[] derivData = new byte[16];
         byte[] hostChal = new byte[8];
+        ResponseAPDU response;
+        
         SecureRandom.getInstanceStrong().nextBytes(hostChal);
-        final ResponseAPDU response = cardMngr.transmit(new CommandAPDU(0xB0, 0x5d, 0x00, 0x00, hostChal));
+        if (enc){
+            response = cardMngr.transmit(new CommandAPDU(0xB0, 0x5d, 0x00, 0x00, hostChal));
+        } else {
+            response = cardMngr.transmit(new CommandAPDU(0xB0, 0x5e, 0x00, 0x00, hostChal));
+        }
         byte[] cardChal = response.getData();
         
         System.arraycopy(cardChal, 0, derivData, 0, 4);
