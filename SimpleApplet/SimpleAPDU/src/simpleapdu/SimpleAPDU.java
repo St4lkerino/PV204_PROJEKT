@@ -282,6 +282,7 @@ public class SimpleAPDU {
         
     }
     
+    /*
     public void setAndVerifyPIN() throws Exception {
         final CardManager cardMngr = new CardManager(true, APPLET_AID_BYTE);
         final RunConfig runCfg = RunConfig.getDefaultConfig();
@@ -337,7 +338,7 @@ public class SimpleAPDU {
         System.out.println(response);
     }
 
-    /*
+    
     public void demoEncryptDecrypt() throws Exception {
         final CardManager cardMngr = new CardManager(true, APPLET_AID_BYTE);
         final RunConfig runCfg = RunConfig.getDefaultConfig();

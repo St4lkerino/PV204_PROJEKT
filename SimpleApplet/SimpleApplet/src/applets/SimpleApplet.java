@@ -65,6 +65,8 @@ public class SimpleApplet extends javacard.framework.Applet {
     private byte[] m_hostPubW;
     private MessageDigest md5_hash = null;
     private Signature  m_hmac_sha256 = null;
+    private Signature m_sign = null;
+    private Signature m_verify = null;
     private HMACKey m_tempSessionHMACKey = null;
     private AESKey m_staticEncKey = null;
     private AESKey m_sessionEncKey = null;
@@ -134,6 +136,8 @@ public class SimpleApplet extends javacard.framework.Applet {
             md5_hash = MessageDigest.getInstance(MessageDigest.ALG_MD5, false);
             
             m_hmac_sha256 = Signature.getInstance(Signature.ALG_HMAC_SHA_256, false);
+            m_sign = Signature.getInstance(Signature.ALG_HMAC_SHA_256, false);
+            m_verify = Signature.getInstance(Signature.ALG_HMAC_SHA_256, false);
 
             pin = (AESKey) KeyBuilder.buildKey(KeyBuilder.TYPE_AES, (short) 128, true);
 
@@ -223,7 +227,7 @@ public class SimpleApplet extends javacard.framework.Applet {
                         ReturnData(apdu);
                         break;
                     case INS_SIGNDATA:
-                        Sign(apdu);
+                        //Sign(apdu);
                         break;
                     case INS_KEYPAIR:
                         GenerateKeyPair(apdu);
@@ -314,6 +318,11 @@ public class SimpleApplet extends javacard.framework.Applet {
         m_staticEncCipher.doFinal(derivData, (short) 0, (short) 16, sessKey, (short) 0);
         m_sessionMacKey = (HMACKey) KeyBuilder.buildKey(KeyBuilder.TYPE_HMAC, KeyBuilder.LENGTH_HMAC_SHA_512_BLOCK_128, true);
         m_sessionMacKey.setKey(sessKey, (short) 0, (short) 16);
+        m_sign.init(m_sessionMacKey, Signature.MODE_SIGN);
+        m_verify.init(m_sessionMacKey, Signature.MODE_VERIFY);
+        
+        // DEBUG
+        byte[] signedDeriv = Sign(derivData);
     }
     
     void sessionEncKey(APDU apdu){
@@ -621,16 +630,24 @@ public class SimpleApplet extends javacard.framework.Applet {
         apdu.setOutgoingAndSend(ISO7816.OFFSET_CDATA, dataLen);
     }
 
-    void Sign(APDU apdu) {
-        byte[] apdubuf = apdu.getBuffer();
-        short dataLen = apdu.setIncomingAndReceive();
+    byte[] Sign(byte[] data) {
+        short dataLen = (short) data.length;
+        byte[] signedData = new byte[(short) 32 + dataLen];
+        
+        // COPY ORIGINAL DATA FIRST
+        Util.arrayCopy(data, (short) 0, signedData, (short) 0, dataLen);
         short signLen = 0;
 
         // SIGN INCOMING BUFFER
-        // COPY SIGNED DATA INTO OUTGOING BUFFER
-        Util.arrayCopyNonAtomic(m_ramArray, (short) 0, apdubuf, ISO7816.OFFSET_CDATA, signLen);
-
-        // SEND OUTGOING BUFFER
-        apdu.setOutgoingAndSend(ISO7816.OFFSET_CDATA, signLen);
+        signLen = m_sign.sign(data, (short) 0, (byte) dataLen, m_ramArray, (byte) 0);
+        
+        // COPY SIGNATURE AFTER ORIGINAL DATA
+        Util.arrayCopyNonAtomic(m_ramArray, (short) 0, signedData, dataLen, signLen);
+        return data;
+    }
+    
+    boolean Verify(byte[] signedData){
+        short dataLen = (short) (signedData.length - 32);
+        return m_verify.verify(signedData, (short) 0, dataLen, signedData, dataLen, (short) 32);
     }
 }
