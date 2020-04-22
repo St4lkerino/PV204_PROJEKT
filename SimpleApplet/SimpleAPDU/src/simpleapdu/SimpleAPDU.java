@@ -30,8 +30,7 @@ public class SimpleAPDU {
     private static final String STR_APDU_GETRANDOM = "B054100000";
     
     private byte[] staticEncKey;
-        
-        
+    Mac sha = null;
     
 
 
@@ -82,6 +81,8 @@ public class SimpleAPDU {
         final CardManager cardMngr = new CardManager(true, APPLET_AID_BYTE);
         byte[] sessionEncKey = new byte[16];
         byte[] sessionMacKey = new byte[16];
+        sha = Mac.getInstance("HmacSHA256");
+        SecretKeySpec mac = null;
         
         // Connect to first available card
             System.out.print("Connecting to card...");
@@ -112,6 +113,10 @@ public class SimpleAPDU {
             sessionEncKey = sessionKey(cardMngr, true);
             sessionMacKey = sessionKey(cardMngr, false);
             
+            mac = new SecretKeySpec(sessionMacKey, "HmacSHA256");
+            sha.init(mac);
+            
+            
             cardMngr.Disconnect(false);
             return 0;
     }
@@ -141,8 +146,6 @@ public class SimpleAPDU {
         
         cipherAes.init(Cipher.ENCRYPT_MODE, secretKeySpec, ivSpec);
         return cipherAes.doFinal(derivData);
-        
-        
     }
     
     private byte[] derivationData(CardManager cardMngr, boolean enc) throws Exception {
@@ -280,6 +283,30 @@ public class SimpleAPDU {
         // </verify>
         int kek = 5;
         
+    }
+    
+    byte[] sign(byte[] data) throws Exception {
+        short dataLen = (short) data.length;
+        byte[] signedData = new byte[(short) 32 + dataLen];
+        
+        // COPY ORIGINAL DATA FIRST
+        System.arraycopy(data, (short) 0, signedData, (short) 0, dataLen);
+        short signLen = 0;
+        
+        // ADD SIGNATURE AFTER OG DATA
+        System.arraycopy(sha.doFinal(data), (short) 0, signedData, dataLen, (short) 32);
+        
+        return signedData;
+    }
+    
+    boolean verify(byte[] signedData) throws Exception {
+        short dataLen = (short) (signedData.length - 32);
+        byte data[] = new byte[dataLen];
+        byte signature[] = new byte[32];
+        System.arraycopy(signedData, dataLen, signature, (short) 0, (short) 32);
+        System.arraycopy(signedData, (short) 0, data, (short) 0, dataLen);
+        byte[] digest = sha.doFinal(data);
+        return Arrays.equals(digest, signature);
     }
     
     /*

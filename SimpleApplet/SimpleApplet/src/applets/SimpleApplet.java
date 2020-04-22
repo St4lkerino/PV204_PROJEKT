@@ -321,8 +321,6 @@ public class SimpleApplet extends javacard.framework.Applet {
         m_sign.init(m_sessionMacKey, Signature.MODE_SIGN);
         m_verify.init(m_sessionMacKey, Signature.MODE_VERIFY);
         
-        // DEBUG
-        byte[] signedDeriv = Sign(derivData);
     }
     
     void sessionEncKey(APDU apdu){
@@ -643,7 +641,7 @@ public class SimpleApplet extends javacard.framework.Applet {
         
         // COPY SIGNATURE AFTER ORIGINAL DATA
         Util.arrayCopyNonAtomic(m_ramArray, (short) 0, signedData, dataLen, signLen);
-        return data;
+        return signedData;
     }
     
     boolean Verify(byte[] signedData){
