@@ -45,9 +45,7 @@ public class SecureCardChannel {
      */
     public SecureCardChannel() throws Exception{
         cardMngr = new CardManager(true, APPLET_AID_BYTE);
-        aesE = Cipher.getInstance("AES/CBC/PKCS5PADDING");
-        aesD = Cipher.getInstance("AES/CBC/PKCS5PADDING");
-        sha = Mac.getInstance("HmacSHA256");
+        
 
         // PIN generation
         byte[] PIN = new byte[4];
@@ -74,7 +72,12 @@ public class SecureCardChannel {
         
     }
 
-    public boolean initSession() throws Exception{     
+    public boolean initSession() throws Exception{   
+        aesE = Cipher.getInstance("AES/CBC/PKCS5PADDING");
+        aesD = Cipher.getInstance("AES/CBC/PKCS5PADDING");
+        sha = Mac.getInstance("HmacSHA256");
+        
+
         byte[] sessionEncKey = new byte[16];
         byte[] sessionMacKey = new byte[16];
         byte[] nonceDerivData = new byte[16];
@@ -136,6 +139,9 @@ public class SecureCardChannel {
     }
     
     public void endSession() throws Exception {
+        aesE = null;
+        aesD = null;
+        sha = null;
         secRandom.nextBytes(nonce);
         cardMngr.Disconnect(false);
     }
