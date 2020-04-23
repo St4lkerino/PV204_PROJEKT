@@ -197,10 +197,10 @@ public class SecureCardChannel {
     }
     
     /**
-     * 
+     * Method generating enc and MAC keys for the session
      * @param cardMngr Card manager
      * @param enc true if we want Applet to produce ENC key, false if MAC
-     * @return
+     * @return the key
      * @throws Exception 
      */
     private byte[] sessionKey(boolean enc, byte[] nonceDerivData) throws Exception {
@@ -228,6 +228,12 @@ public class SecureCardChannel {
         return cipherAes.doFinal(derivData);
     }
     
+    /**
+     * Compile derivation data from card and host challenges
+     * @param enc true if we are using the data for encryption key, false if for MAC key
+     * @return derivationData
+     * @throws Exception 
+     */
     private byte[] derivationData(boolean enc) throws Exception {
         byte[] derivData = new byte[16];
         byte[] hostChal = new byte[8];
@@ -365,6 +371,12 @@ public class SecureCardChannel {
         return -1;
     }
     
+    /**
+     * Generate HMAC of the data and append it to the new array, together with data
+     * @param data
+     * @return array with data + HMAC
+     * @throws Exception 
+     */
     byte[] sign(byte[] data) throws Exception {
         short dataLen = (short) data.length;
         byte[] signedData = new byte[(short) 32 + dataLen];
@@ -379,6 +391,12 @@ public class SecureCardChannel {
         return signedData;
     }
     
+    /**
+     * Verify HMAC of received data, appended to the end of the data array
+     * @param signedData data + HMAC
+     * @return true if verification is successfull
+     * @throws Exception 
+     */
     private boolean verify(byte[] signedData) throws Exception {
         short dataLen = (short) (signedData.length - 32);
         byte data[] = new byte[dataLen];
@@ -397,6 +415,11 @@ public class SecureCardChannel {
         return aesD.doFinal(data);
     }
     
+    /**
+     * Verify freshness of incoming data by checking the nonce appended at the end of the array
+     * @param data data with the nonce
+     * @return true if the nonce is valid
+     */
     private boolean verifyNonce(byte[] data){
         short noncePos = (short) (data.length - 32); 
         byte[] cardNonce = new byte[32];
@@ -408,6 +431,11 @@ public class SecureCardChannel {
         return true;
     }
     
+    /**
+     * Put the data together with a valid freshness nonce to a new array
+     * @param data without nonce
+     * @return array containig original data and valid freshness nonce
+     */
     private byte[] addNonce(byte[] data){
         short dataLen = (short) data.length;
         byte[] withNonce = new byte[(short) 32 + dataLen];

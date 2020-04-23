@@ -366,6 +366,11 @@ public class SimpleApplet extends javacard.framework.Applet {
         
     }
 
+    /**
+     * Method veryfying if correct nonce has been received with the message
+     * @param data array containig APDU data together with nonce 
+     * @return APDU data without the nonce
+     */
     byte[] verifyNonce(byte[] data){
         short dataLen = (short) (data.length - 32); 
         short good = Util.arrayCompare(data, dataLen, nonce, (short) 0, (short) 32);
@@ -382,6 +387,11 @@ public class SimpleApplet extends javacard.framework.Applet {
         return withoutNonce;
     }
     
+    /**
+     * Method appending a fresh nonce to the data
+     * @param data APDU data without the nonce
+     * @return APDU data + nonce in the last 32B
+     */
     byte[] addNonce(byte[] data){
         short dataLen = (short) data.length;
         byte[] withNonce = new byte[(short) (dataLen + 32)];
@@ -391,6 +401,11 @@ public class SimpleApplet extends javacard.framework.Applet {
         return withNonce;
     }
     
+    /**
+     * Method deriving session MAC key from card and host challenges, using master key from ECDH
+     * It also creates the first nonce in the hash chain
+     * @param apdu Command APDU for MAC key derivation
+     */
     void sessionMacKey(APDU apdu){
         // GET DERIVATION DATA FOR ENC KEY
         byte[] derivData = derivationData(apdu);
@@ -419,6 +434,10 @@ public class SimpleApplet extends javacard.framework.Applet {
         m_protocolState = EXPECTING_TRAFFIC;
     }
     
+    /**
+     * Method deriving session encryption key from deriv data and master key 
+     * @param apdu Command APDU for session enc key
+     */
     void sessionEncKey(APDU apdu){
         // GET DERIVATION DATA FOR ENC KEY
         byte[] derivData = derivationData(apdu);
@@ -444,7 +463,10 @@ public class SimpleApplet extends javacard.framework.Applet {
         m_protocolState = EXPECTING_MAC_KEY;
     }
     
-    // Exchange challenges and derive session keys from them, using DH secret
+    /**
+     * Exchange challenges and derive session keys from them, using DH secret
+     * @param apdu APDU containing challenge from host
+     */ 
     byte[] derivationData(APDU apdu){
         byte[] apdubuf = apdu.getBuffer();
         short dataLen = apdu.setIncomingAndReceive();
@@ -696,6 +718,11 @@ public class SimpleApplet extends javacard.framework.Applet {
         return returnData;
     }
 
+    /**
+     * Generate HMAC from the message data and append it to a new array together with data
+     * @param data
+     * @return data + HMAC
+     */
     byte[] Sign(byte[] data) {
         short dataLen = (short) data.length;
         byte[] signedData = new byte[(short) 32 + dataLen];
@@ -712,6 +739,11 @@ public class SimpleApplet extends javacard.framework.Applet {
         return signedData;
     }
     
+    /**
+     * Verify correctness of HMAC appended to incoming data
+     * @param signedData
+     * @return true if HMAC is correct
+     */
     boolean Verify(byte[] signedData){
         short dataLen = (short) (signedData.length - 32);
         return m_verify.verify(signedData, (short) 0, dataLen, signedData, (short)dataLen, (short) 32);
