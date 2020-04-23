@@ -299,8 +299,8 @@ public class SimpleApplet extends javacard.framework.Applet {
         
         encryptedData = Encrypt(returnedWithNonce);
         signedData = Sign(encryptedData);
-        Util.arrayCopyNonAtomic(signedData, (short) 0, apdubuf, ISO7816.OFFSET_CDATA, (short) (len + 32));
-        apdu.setOutgoingAndSend(ISO7816.OFFSET_CDATA, (short) (len + 32));
+        Util.arrayCopyNonAtomic(signedData, (short) 0, apdubuf, ISO7816.OFFSET_CDATA, (short) (signedData.length));
+        apdu.setOutgoingAndSend(ISO7816.OFFSET_CDATA, (short) (signedData.length));
     }
     
     void clearSessionData() {
@@ -567,8 +567,15 @@ public class SimpleApplet extends javacard.framework.Applet {
     // ENCRYPT INCOMING BUFFER
     byte[] Encrypt(byte[] data) {
         short dataLen = (short) data.length;
+        short paddLen = (short) (16 - (dataLen % 16));
+        
+        byte[] paddedData = new byte[dataLen + paddLen];
+        java.util.Arrays.fill(paddedData, (byte)paddLen);
+        Util.arrayCopy(data, (short) 0, paddedData, (short) (0), dataLen);
+        
+        dataLen += paddLen;
         byte[] encryptedData = new byte[dataLen];
-
+        
         // CHECK EXPECTED LENGTH (MULTIPLY OF AES BLOCK LENGTH)
         if ((dataLen % 16) != 0) {
             ISOException.throwIt(SW_CIPHER_DATA_LENGTH_BAD);
@@ -576,7 +583,8 @@ public class SimpleApplet extends javacard.framework.Applet {
 
         m_encryptCipher.init(m_sessionEncKey, Cipher.MODE_ENCRYPT);
         // ENCRYPT INCOMING BUFFER
-        m_encryptCipher.doFinal(data, (short)0, dataLen, m_ramArray, (short) 0);
+        m_encryptCipher.doFinal(paddedData, (short)0, dataLen, m_ramArray, (short) 0);
+        
         // NOTE: In-place encryption directly with apdubuf as output can be performed. m_ramArray used to demonstrate Util.arrayCopyNonAtomic
 
         // COPY ENCRYPTED DATA
@@ -593,14 +601,20 @@ public class SimpleApplet extends javacard.framework.Applet {
         if ((dataLen % 16) != 0) {
             ISOException.throwIt(SW_CIPHER_DATA_LENGTH_BAD);
         }
-
+        
         m_decryptCipher.init(m_sessionEncKey, Cipher.MODE_DECRYPT);
         // ENCRYPT INCOMING BUFFER
         m_decryptCipher.doFinal(data, (short)0, dataLen, m_ramArray, (short) 0);
-
-        // COPY ENCRYPTED DATA INTO OUTGOING BUFFER
+        
+        // COPY ENCRYPTED DATA INTO BUFFER
         Util.arrayCopyNonAtomic(m_ramArray, (short) 0, decryptedData, (short) 0, dataLen);
-        return decryptedData;
+        
+        // REMOVE PADDING
+        short paddLen = decryptedData[dataLen - 1];
+        byte[] unpaddedData = new byte[dataLen - paddLen];
+        Util.arrayCopy(decryptedData, (short) 0, unpaddedData, (short) (0), (short) (dataLen - paddLen));
+
+        return unpaddedData;
     }
 
     // HASH INCOMING BUFFER
@@ -657,7 +671,9 @@ public class SimpleApplet extends javacard.framework.Applet {
 
     // RETURN INPUT DATA UNCHANGED
     byte[] ReturnData(byte[] apdubuf) {
-        return apdubuf;
+        byte[] returnData = new byte[apdubuf.length - ISO7816.OFFSET_CDATA + 1];
+        Util.arrayCopy(apdubuf, (short) (ISO7816.OFFSET_CDATA - 1), returnData, (short) 0, (short) (apdubuf.length - ISO7816.OFFSET_CDATA + 1));
+        return returnData;
     }
 
     byte[] Sign(byte[] data) {

@@ -45,8 +45,8 @@ public class SecureCardChannel {
      */
     public SecureCardChannel() throws Exception{
         cardMngr = new CardManager(true, APPLET_AID_BYTE);
-        aesE = Cipher.getInstance("AES/CBC/NoPadding");
-        aesD = Cipher.getInstance("AES/CBC/NoPadding");
+        aesE = Cipher.getInstance("AES/CBC/PKCS5PADDING");
+        aesD = Cipher.getInstance("AES/CBC/PKCS5PADDING");
         sha = Mac.getInstance("HmacSHA256");
 
         // PIN generation
