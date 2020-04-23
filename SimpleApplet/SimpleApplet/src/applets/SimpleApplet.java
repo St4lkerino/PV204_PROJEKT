@@ -28,6 +28,7 @@ public class SimpleApplet extends javacard.framework.Applet {
     final static byte INS_ENC_KEY = (byte) 0x5d;
     final static byte INS_MAC_KEY = (byte) 0x5e;
     final static byte INS_PROCESS_PROTECTED = (byte) 0x5f;
+    final static byte INS_ABORT = (byte) 0x60;
 
     final static short ARRAY_LENGTH = (short) 0xff;
     final static byte AES_BLOCK_LENGTH = (short) 0x16;
@@ -75,10 +76,21 @@ public class SimpleApplet extends javacard.framework.Applet {
     private AESKey m_sessionEncKey = null;
     private HMACKey m_sessionMacKey = null;
     private Cipher m_staticEncCipher = null;
-    private byte[] nonce = new byte[32];
+    private final byte[] nonce = new byte[32];
+    
+    //this would be persistent
+    private short m_maxNumberOfTriesLeft = 3;
     
     
-    private short m_maxNumberOfTries = 3;
+    
+    final static short EXPECTING_PUBLIC_KEY = 1;
+    final static short EXPECTING_TEMPORARY_KEY = 2;
+    final static short EXPECTING_CHALLENGE_ECDH = 3;
+    final static short EXPECTING_ENC_KEY = 4;
+    final static short EXPECTING_MAC_KEY = 5;
+    final static short EXPECTING_TRAFFIC = 6;
+    
+    private short m_protocolState;
 
     private KeyAgreement keyAgreement;
 
@@ -150,6 +162,7 @@ public class SimpleApplet extends javacard.framework.Applet {
 
             // update flag
             isOP2 = true;
+            m_protocolState = EXPECTING_PUBLIC_KEY;
 
         }
 
@@ -209,26 +222,52 @@ public class SimpleApplet extends javacard.framework.Applet {
                 // These are only supported outside protected channel
                 switch (apduBuffer[ISO7816.OFFSET_INS]) {
                     case INS_EXCHANGE_PUBS:
-                        exchangePubKeys(apdu);
+                        if (m_protocolState == EXPECTING_PUBLIC_KEY){
+                            exchangePubKeys(apdu);
+                        }                        
                         break;
+                        
                     case INS_GET_HOST_TMP_PUB:
+                        if (m_protocolState == EXPECTING_TEMPORARY_KEY){
+                            
+                        }
                         GetEncryptedTempPub(apdu);
                         break;
+                        
                     case INS_GET_HOST_CHALLENGE:
-                        GetHostChallenge(apdu);
+                        if (m_protocolState == EXPECTING_CHALLENGE_ECDH){
+                            GetHostChallenge(apdu);
+                        }
                         break;
+                        
                     case INS_ENC_KEY:
-                        sessionEncKey(apdu);
+                        if (m_protocolState == EXPECTING_ENC_KEY){
+                            sessionEncKey(apdu);
+                        } 
                         break;
+                        
                     case INS_MAC_KEY:
-                        sessionMacKey(apdu);
+                        if (m_protocolState == EXPECTING_MAC_KEY){
+                            sessionMacKey(apdu);
+                        }    
                         break;
+                        
                     case INS_PROCESS_PROTECTED:
-                        processProtected(apdu);
+                        if (m_protocolState == EXPECTING_TRAFFIC){
+                            processProtected(apdu);
+                        }
+                        break;
+                        
+                    case INS_ABORT:
+                        abort();
+                        break;
+                        
+                    default:
+                        ISOException.throwIt(ISO7816.SW_INS_NOT_SUPPORTED);
                         break;
                 }
             } else {
-                ISOException.throwIt(ISO7816.SW_CLA_NOT_SUPPORTED);
+                ISOException.throwIt(ISO7816.SW_INS_NOT_SUPPORTED);
             }
 
             // Capture all reasonable exceptions and change into readable ones (instead of 0x6f00) 
@@ -257,6 +296,14 @@ public class SimpleApplet extends javacard.framework.Applet {
         } catch (Exception e) {
             ISOException.throwIt(SW_Exception);
         }
+    }
+    
+    void abort(){
+        if (m_maxNumberOfTriesLeft > 0){
+            m_maxNumberOfTriesLeft--;
+        }
+        m_protocolState = EXPECTING_PUBLIC_KEY;
+        ISOException.throwIt((short) ((short) 0x63C0 + (short) m_maxNumberOfTriesLeft));
     }
     
     
@@ -305,6 +352,7 @@ public class SimpleApplet extends javacard.framework.Applet {
     
     void clearSessionData() {
         // E.g., fill sesssion data in RAM with zeroes
+        //TODO FILL SHIT UP
         Util.arrayFillNonAtomic(m_ramArray, (short) 0, (short) m_ramArray.length, (byte) 0);
         // Or better fill with random data
         m_secureRandom.nextBytes(m_ramArray, (short) 0, (short) m_ramArray.length);
@@ -360,6 +408,7 @@ public class SimpleApplet extends javacard.framework.Applet {
         // DERIVE FIRST NONCE
         m_sign.sign(derivData, (short) 0, (short) 16, nonce, (short) 0);
         
+        m_protocolState = EXPECTING_TRAFFIC;
     }
     
     void sessionEncKey(APDU apdu){
@@ -383,6 +432,8 @@ public class SimpleApplet extends javacard.framework.Applet {
         m_staticEncCipher.doFinal(derivData, (short) 0, (short) 16, sessKey, (short) 0);
         m_sessionEncKey = (AESKey) KeyBuilder.buildKey(KeyBuilder.TYPE_AES, KeyBuilder.LENGTH_AES_128, true);
         m_sessionEncKey.setKey(sessKey, (short) 0);
+        
+        m_protocolState = EXPECTING_MAC_KEY;
     }
     
     // Exchange challenges and derive session keys from them, using DH secret
@@ -441,7 +492,9 @@ public class SimpleApplet extends javacard.framework.Applet {
             m_tempPubKey = (ECPublicKey) m_tempKeyPair.getPublic();
 
 
+                
             short len = m_pubKey.getW(apdubuf, ISO7816.OFFSET_CDATA);
+            m_protocolState = EXPECTING_TEMPORARY_KEY;
             apdu.setOutgoingAndSend(ISO7816.OFFSET_CDATA, len);
             
         } catch (Exception e) {
@@ -473,44 +526,48 @@ public class SimpleApplet extends javacard.framework.Applet {
     }
 
     void GetEncryptedTempPub(APDU apdu) {
-        try {
-            byte[] apdubuf = apdu.getBuffer();
-            short dataLen = apdu.setIncomingAndReceive();
 
-            if ((dataLen % 16) != 0) {
-                ISOException.throwIt(SW_CIPHER_DATA_LENGTH_BAD);
-            }
-            
-            m_decryptCipher.init(pin, Cipher.MODE_DECRYPT);
-            short messageLen = m_decryptCipher.doFinal(apdubuf, ISO7816.OFFSET_CDATA, dataLen, m_ramArray, (short) 0);
+        byte[] apdubuf = apdu.getBuffer();
+        short dataLen = apdu.setIncomingAndReceive();
 
-            m_tempHostPubW = new byte[33];
-            Util.arrayCopy(m_ramArray, (short) 0, m_tempHostPubW, (short) 0, (short)  33);
-            m_secureRandom.nextBytes(m_ramArray, (short) 0, messageLen);
-
-            keyAgreement = KeyAgreement.getInstance(KeyAgreement.ALG_EC_SVDP_DH, false);
-            keyAgreement.init(m_tempPrivKey);
-            short secretLen = keyAgreement.generateSecret(m_tempHostPubW, (short) 0, (short) m_tempHostPubW.length, m_ramArray, (short) 0);
-            //KBA IS IN RAM
-            
-            //forget host temporary pub key
-            m_secureRandom.nextBytes(m_tempHostPubW, (short) 0, (short) m_tempHostPubW.length);
-            m_tempHostPubW = null;
-
-            short pubKeyWLen = m_tempPubKey.getW(apdubuf, ISO7816.OFFSET_CDATA);
-            //add hash with key Kba(Public of card, public of host,temp of card)
-            byte[] challenge = generateHashChallenge();
-            
-            //clean temp keys
-            m_tempPubKey.clearKey();
-            m_tempPrivKey.clearKey();
-            
-            Util.arrayCopy(challenge, (short) 0, apdubuf, (short) (ISO7816.OFFSET_CDATA + pubKeyWLen), (short) challenge.length);
-            apdu.setOutgoingAndSend(ISO7816.OFFSET_CDATA, (short) (pubKeyWLen + (short) challenge.length));        
-            
-        } catch (Exception e) {
-            ISOException.throwIt((short) 0xFFD3);
+        if ((dataLen % 16) != 0) {
+            ISOException.throwIt(SW_CIPHER_DATA_LENGTH_BAD);
         }
+
+        m_decryptCipher.init(pin, Cipher.MODE_DECRYPT);
+        short messageLen = m_decryptCipher.doFinal(apdubuf, ISO7816.OFFSET_CDATA, dataLen, m_ramArray, (short) 0);
+
+        m_tempHostPubW = new byte[33];
+        Util.arrayCopy(m_ramArray, (short) 0, m_tempHostPubW, (short) 0, (short)  33);
+        m_secureRandom.nextBytes(m_ramArray, (short) 0, messageLen);
+
+        keyAgreement = KeyAgreement.getInstance(KeyAgreement.ALG_EC_SVDP_DH, false);
+        keyAgreement.init(m_tempPrivKey);
+        
+        try {
+            short secretLen = keyAgreement.generateSecret(m_tempHostPubW, (short) 0, (short) m_tempHostPubW.length, m_ramArray, (short) 0);
+        } catch (Exception ex) {
+            abort();
+        }
+        
+        //KBA IS IN RAM
+
+        //forget host temporary pub key
+        m_secureRandom.nextBytes(m_tempHostPubW, (short) 0, (short) m_tempHostPubW.length);
+        m_tempHostPubW = null;
+
+        short pubKeyWLen = m_tempPubKey.getW(apdubuf, ISO7816.OFFSET_CDATA);
+        //add hash with key Kba(Public of card, public of host,temp of card)
+        byte[] challenge = generateHashChallenge();
+
+        //clean temp keys
+        m_tempPubKey.clearKey();
+        m_tempPrivKey.clearKey();
+
+        Util.arrayCopy(challenge, (short) 0, apdubuf, (short) (ISO7816.OFFSET_CDATA + pubKeyWLen), (short) challenge.length);
+        m_protocolState = EXPECTING_CHALLENGE_ECDH;
+        apdu.setOutgoingAndSend(ISO7816.OFFSET_CDATA, (short) (pubKeyWLen + (short) challenge.length));        
+
     }
     
     boolean VerifyHostChallenge(byte[] challenge){
@@ -543,8 +600,7 @@ public class SimpleApplet extends javacard.framework.Applet {
 
             if (!hostChallengeOK){
                 //If challenge is not correct
-                m_maxNumberOfTries--;
-                ISOException.throwIt(SW_CIPHER_DATA_LENGTH_BAD); //TODO change
+                abort();
             }
             
             keyAgreement = KeyAgreement.getInstance(KeyAgreement.ALG_EC_SVDP_DH, false);
@@ -555,6 +611,7 @@ public class SimpleApplet extends javacard.framework.Applet {
             
             //DELET THIS 
             Util.arrayCopy(m_ramArray, (short) 0, apdubuf, ISO7816.OFFSET_CDATA, secretLen);
+            m_protocolState = EXPECTING_ENC_KEY;
             apdu.setOutgoingAndSend(ISO7816.OFFSET_CDATA, (short) secretLen);
             //DELET THAT ^
                      

@@ -90,28 +90,37 @@ public class SecureCardChannel {
         System.out.println(" Done."); //TODO: move to constructor, forget runcfg after?
 
         Scanner scanner = new Scanner(System.in);  // Create a Scanner object
-        System.out.println("Enter PIN:");
-
-        String PINstring = scanner.nextLine();  // Read user input
-
-        // Validate input
-        if (!PINstring.matches("[0-9]{4}")){
-            System.out.print("Incorrect PIN format.");
-            return false;
-        }
-
-        // Convert PIN to byte array
-        byte[] PIN = new byte[4];
-        for (int i = 0; i < 4; i++){
-            PIN[i] = (byte) (PINstring.charAt(i) - '0');
-        }
-
-        ecdh(PIN);
         
-        //forget PIN
-        Arrays.fill(PIN, (byte)0);
-        PIN = null;
+        
+        int ecdhRetVal = 1;
+        
+        while (ecdhRetVal > 0){
+            System.out.println("Enter PIN:");
+            String PINstring = scanner.nextLine();  // Read user input
 
+            // Validate input
+            if (!PINstring.matches("[0-9]{4}")){
+                System.out.print("Incorrect PIN format.");
+                continue;
+            }
+
+            // Convert PIN to byte array
+            byte[] PIN = new byte[4];
+            for (int i = 0; i < 4; i++){
+                PIN[i] = (byte) (PINstring.charAt(i) - '0');
+            }
+
+            ecdhRetVal = ecdh(PIN);
+            
+            if (ecdhRetVal == 0){
+                return false;
+            }
+
+            //forget PIN
+            Arrays.fill(PIN, (byte)0);
+            PIN = null;
+        }
+        
 
         sessionEncKey = sessionKey(true, nonceDerivData);
         sessionMacKey = sessionKey(false, nonceDerivData);
@@ -243,7 +252,7 @@ public class SecureCardChannel {
         return mac.doFinal(concatedKeys);
     }
     
-    private boolean ecdh(byte[] PIN) throws Exception {
+    private int ecdh(byte[] PIN) throws Exception {
         KeyPair kp = new KeyPair(KeyPair.ALG_EC_FP, 
                     KeyBuilder.LENGTH_EC_FP_128);
         kp.genKeyPair();
@@ -251,7 +260,6 @@ public class SecureCardChannel {
         ECPublicKey pubKey = (ECPublicKey) kp.getPublic();
         
         byte temp[] = new byte[255];
-
         byte pubKeyW[] = new byte[33];
         int len = pubKey.getW(pubKeyW, (short) 0);
         
@@ -288,6 +296,11 @@ public class SecureCardChannel {
           
        
         final ResponseAPDU response3 = cardMngr.transmit(new CommandAPDU(0xB0, 0x5b, 0x00, 0x00, cipherAes.doFinal(tempPubKeyW)));
+        int retValue = response3.getSW();
+        
+        if (retValue >= 0x63C0 && retValue < 0x63C3){
+            return retValue - 0x63C0;
+        }
         
         byte[] cardTempPub = Arrays.copyOf(response3.getData(), 33);
         byte[] challenge = Arrays.copyOfRange(response3.getData(), 33, response3.getData().length);
@@ -297,8 +310,7 @@ public class SecureCardChannel {
         ka.generateSecret(cardTempPub, (short) 0, (short) cardTempPub.length, temp, (short) 0);
         
         byte[] tempSecret = Arrays.copyOf(temp, 16); //secret key
-        //clear
-        
+        //clear    
         secRandom.nextBytes(tempPubKeyW);
         secRandom.nextBytes(temp);
         tempPrivKey.clearKey();
@@ -310,9 +322,9 @@ public class SecureCardChannel {
         sha256HMAC.init(secretKey);
         
         boolean cardChallengeOK = verifyChallenge(sha256HMAC, cardPubW, pubKeyW, cardTempPub, challenge);
-        if (!cardChallengeOK){ //if not ok then stop TODO
+        if (!cardChallengeOK){
             System.out.println("Card challenge is NOK!");
-            return false;
+            cardMngr.transmit(new CommandAPDU(0xB0, 0x5b, 0x00, 0x00, cipherAes.doFinal(tempPubKeyW)));
         } else {
             System.out.println("Card challenge is OK!"); // TODO DELETE THIS
         }
@@ -336,7 +348,7 @@ public class SecureCardChannel {
             System.out.println("Final secrets are NOT the same");
         }
         
-        return true;
+        return -1;
     }
     
     byte[] sign(byte[] data) throws Exception {
