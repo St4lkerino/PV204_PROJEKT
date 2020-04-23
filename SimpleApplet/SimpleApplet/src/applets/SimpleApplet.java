@@ -12,13 +12,7 @@ public class SimpleApplet extends javacard.framework.Applet {
     final static byte CLA_SIMPLEAPPLET = (byte) 0xB0;
 
     // INSTRUCTIONS
-    final static byte INS_ENCRYPT = (byte) 0x50;
-    final static byte INS_DECRYPT = (byte) 0x51;
-    final static byte INS_SETKEY = (byte) 0x52;
-    final static byte INS_HASH = (byte) 0x53;
     final static byte INS_RANDOM = (byte) 0x54;
-    final static byte INS_VERIFYPIN = (byte) 0x55;
-    final static byte INS_SETPIN = (byte) 0x56;
     final static byte INS_RETURNDATA = (byte) 0x57;
     final static byte INS_SIGNDATA = (byte) 0x58;
     final static byte INS_KEYPAIR = (byte) 0x59;
@@ -56,7 +50,6 @@ public class SimpleApplet extends javacard.framework.Applet {
     private Cipher m_encryptCipher = null;
     private Cipher m_decryptCipher = null;
     private RandomData m_secureRandom = null;
-    private MessageDigest m_hash = null;
     private OwnerPIN m_pin = null;
     private AESKey pin = null;
     private KeyPair kp;
@@ -548,9 +541,8 @@ public class SimpleApplet extends javacard.framework.Applet {
             short secretLen = keyAgreement.generateSecret(m_tempHostPubW, (short) 0, (short) m_tempHostPubW.length, m_ramArray, (short) 0);
         } catch (Exception ex) {
             abort();
-        }
-        
-        //KBA IS IN RAM
+        }        
+
 
         //forget host temporary pub key
         m_secureRandom.nextBytes(m_tempHostPubW, (short) 0, (short) m_tempHostPubW.length);
@@ -674,56 +666,16 @@ public class SimpleApplet extends javacard.framework.Applet {
         return unpaddedData;
     }
 
-    // HASH INCOMING BUFFER
-    void Hash(APDU apdu) {
-        byte[] apdubuf = apdu.getBuffer();
-        short dataLen = apdu.setIncomingAndReceive();
-
-        if (m_hash != null) {
-            m_hash.doFinal(apdubuf, ISO7816.OFFSET_CDATA, dataLen, m_ramArray, (short) 0);
-        } else {
-            ISOException.throwIt(SW_OBJECT_NOT_AVAILABLE);
-        }
-
-        // COPY ENCRYPTED DATA INTO OUTGOING BUFFER
-        Util.arrayCopyNonAtomic(m_ramArray, (short) 0, apdubuf, ISO7816.OFFSET_CDATA, m_hash.getLength());
-
-        // SEND OUTGOING BUFFER
-        apdu.setOutgoingAndSend(ISO7816.OFFSET_CDATA, m_hash.getLength());
-    }
-
     // GENERATE RANDOM DATA
     void Random(APDU apdu) {
         byte[] apdubuf = apdu.getBuffer();
 
         // GENERATE DATA
         short randomDataLen = apdubuf[ISO7816.OFFSET_P1];
-        m_secureRandom.generateData(apdubuf, ISO7816.OFFSET_CDATA, randomDataLen);
+        m_secureRandom.nextBytes(apdubuf, ISO7816.OFFSET_CDATA, randomDataLen);
 
         // SEND OUTGOING BUFFER
         apdu.setOutgoingAndSend(ISO7816.OFFSET_CDATA, randomDataLen);
-    }
-
-    // VERIFY PIN
-    void VerifyPIN(APDU apdu) {
-        byte[] apdubuf = apdu.getBuffer();
-        short dataLen = apdu.setIncomingAndReceive();
-
-        // VERIFY PIN
-        if (m_pin.check(apdubuf, ISO7816.OFFSET_CDATA, (byte) dataLen) == false) {
-            ISOException.throwIt(SW_BAD_PIN);
-        }
-    }
-
-    // SET PIN 
-    // Be aware - this method will allow attacker to set own PIN - need to protected. 
-    // E.g., by additional Admin PIN or all secret data of previous user needs to be reased 
-    void SetPIN(APDU apdu) {
-        byte[] apdubuf = apdu.getBuffer();
-        short dataLen = apdu.setIncomingAndReceive();
-
-        // SET NEW PIN
-        m_pin.update(apdubuf, ISO7816.OFFSET_CDATA, (byte) dataLen);
     }
 
     // RETURN INPUT DATA UNCHANGED
