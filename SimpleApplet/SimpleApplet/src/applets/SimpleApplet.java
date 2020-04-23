@@ -344,10 +344,26 @@ public class SimpleApplet extends javacard.framework.Applet {
     
     void clearSessionData() {
         // E.g., fill sesssion data in RAM with zeroes
-        //TODO FILL SHIT UP
         Util.arrayFillNonAtomic(m_ramArray, (short) 0, (short) m_ramArray.length, (byte) 0);
         // Or better fill with random data
         m_secureRandom.nextBytes(m_ramArray, (short) 0, (short) m_ramArray.length);
+        
+        if (m_staticEncKey != null){
+            m_staticEncKey.clearKey();
+            m_staticEncKey = null;
+        }
+        
+        if (m_sessionEncKey != null){
+            m_sessionEncKey.clearKey();
+            m_sessionEncKey = null;
+        }
+        
+        if (m_sessionMacKey != null){
+            m_sessionMacKey.clearKey();
+            m_sessionMacKey = null;
+        }
+        
+        
     }
 
     byte[] verifyNonce(byte[] data){
@@ -513,7 +529,6 @@ public class SimpleApplet extends javacard.framework.Applet {
         
         byte[] result = new byte[32];
         short resultLen = m_hmac_sha256.sign(m_ramArray,(short) 0, totalLength, result, (short) 0); 
-        
         return result;
     }
 
@@ -598,15 +613,13 @@ public class SimpleApplet extends javacard.framework.Applet {
             keyAgreement.init(m_privKey);
             short secretLen = keyAgreement.generateSecret(m_hostPubW, (short) 0, (short) m_hostPubW.length, m_ramArray, (short) 0);
             //FROM HERE ON OUT, THE DERIVED SECRET FROM PUB KEYS IS IN RAM
+            m_pubKey.clearKey();
+            m_privKey.clearKey();
             
-            
-            //DELET THIS 
-            Util.arrayCopy(m_ramArray, (short) 0, apdubuf, ISO7816.OFFSET_CDATA, secretLen);
             m_protocolState = EXPECTING_ENC_KEY;
-            apdu.setOutgoingAndSend(ISO7816.OFFSET_CDATA, (short) secretLen);
-            //DELET THAT ^
                      
-            
+            apdu.setOutgoingAndSend(ISO7816.OFFSET_CDATA, (short) 0);
+         
         } catch (Exception e) {
             ISOException.throwIt((short) 0xFFD4);
         }

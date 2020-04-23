@@ -69,9 +69,7 @@ public class SecureCardChannel {
         runCfg.setInstallData(INSTALL_DATA);     
         
         //Forget Pin
-        for (int i = 0; i < 4; i++){
-            PIN[i] = (byte) (0);
-        }
+        Arrays.fill(PIN, (byte)0);
         PIN = null;
         
     }
@@ -80,18 +78,16 @@ public class SecureCardChannel {
         byte[] sessionEncKey = new byte[16];
         byte[] sessionMacKey = new byte[16];
         byte[] nonceDerivData = new byte[16];
-        SecretKeySpec mac;
+        
 
         System.out.print("Connecting to card...");
         if (!cardMngr.Connect(runCfg)) {
             System.out.println(" Failed.");
             return false;
         }
-        System.out.println(" Done."); //TODO: move to constructor, forget runcfg after?
+        System.out.println(" Done."); 
 
         Scanner scanner = new Scanner(System.in);  // Create a Scanner object
-        
-        
         int ecdhRetVal = 1;
         
         while (ecdhRetVal > 0){
@@ -125,21 +121,22 @@ public class SecureCardChannel {
         sessionEncKey = sessionKey(true, nonceDerivData);
         sessionMacKey = sessionKey(false, nonceDerivData);
 
-        mac = new SecretKeySpec(sessionMacKey, "HmacSHA256");
+        SecretKeySpec mac = new SecretKeySpec(sessionMacKey, "HmacSHA256");
         sha.init(mac);
         nonce = sha.doFinal(nonceDerivData);
 
         byte[] ivArray = new byte[16];
         Arrays.fill(ivArray, (byte)0);
-        SecretKeySpec keyspec = new SecretKeySpec(sessionEncKey, "AES");
+        SecretKeySpec encKeyspec = new SecretKeySpec(sessionEncKey, "AES");
         IvParameterSpec ivspec = new IvParameterSpec(ivArray);
-        aesD.init(Cipher.DECRYPT_MODE, keyspec, ivspec);
-        aesE.init(Cipher.ENCRYPT_MODE, keyspec, ivspec);
+        aesD.init(Cipher.DECRYPT_MODE, encKeyspec, ivspec);
+        aesE.init(Cipher.ENCRYPT_MODE, encKeyspec, ivspec);
 
         return true;
     }
     
     public void endSession() throws Exception {
+        secRandom.nextBytes(nonce);
         cardMngr.Disconnect(false);
     }
     
@@ -149,6 +146,7 @@ public class SecureCardChannel {
         return transmit(command);
     }
     
+    //test function
     public byte[] returnData(byte[] data) throws Exception {
         byte[] command = Util.hexStringToByteArray("B0570000"); 
         byte[] apdu = new byte[data.length + 4];
@@ -173,7 +171,7 @@ public class SecureCardChannel {
         byte[] responseData = response.getData();
         
         if (!verify(responseData)) {
-            System.out.println("Oopsie, bad signature");
+            throw new Exception("Bad signature");
         } 
         
         byte[] encryptedResponse = new byte[responseData.length - 32];
@@ -182,7 +180,7 @@ public class SecureCardChannel {
         
         
         if(!verifyNonce(decryptedResponse)){
-            System.out.println("Bad nonce.");
+            throw new Exception("Bad nonce");
         } 
         
         // Remove nonce
@@ -287,7 +285,6 @@ public class SecureCardChannel {
         ECPublicKey tempPubKey = (ECPublicKey) kp2.getPublic();
         byte[] cardPubW = response2.getData();
         
-        
         MessageDigest digest = MessageDigest.getInstance("MD5");
         byte[] key = digest.digest(PIN);
         SecretKeySpec secretKeySpec = new SecretKeySpec(key, "AES");
@@ -297,8 +294,7 @@ public class SecureCardChannel {
         // Set IV to 0
         byte[] ivArray = new byte[16];
         Arrays.fill(ivArray, (byte)0);
-        IvParameterSpec ivSpec = new IvParameterSpec(ivArray);
-        
+        IvParameterSpec ivSpec = new IvParameterSpec(ivArray);     
         cipherAes.init(Cipher.ENCRYPT_MODE, secretKeySpec, ivSpec);
  
         SecureRandom random = new SecureRandom();
@@ -307,10 +303,10 @@ public class SecureCardChannel {
         for (int i = len; i < tempPubKeyW.length; i++){
             tempPubKeyW[i] = (byte) random.nextInt(); // against offline
         }
-          
-       
+                 
         final ResponseAPDU response3 = cardMngr.transmit(new CommandAPDU(0xB0, 0x5b, 0x00, 0x00, cipherAes.doFinal(tempPubKeyW)));
         int retValue = response3.getSW();
+        
         
         if (retValue >= 0x63C0 && retValue < 0x63C3){
             return retValue - 0x63C0;
@@ -335,12 +331,17 @@ public class SecureCardChannel {
         SecretKeySpec secretKey = new SecretKeySpec(tempSecret, "HmacSHA256");
         sha256HMAC.init(secretKey);
         
+        //clear secret
+        secRandom.nextBytes(tempSecret);
+        
         boolean cardChallengeOK = verifyChallenge(sha256HMAC, cardPubW, pubKeyW, cardTempPub, challenge);
         if (!cardChallengeOK){
-            System.out.println("Card challenge is NOK!");
-            cardMngr.transmit(new CommandAPDU(0xB0, 0x5b, 0x00, 0x00, cipherAes.doFinal(tempPubKeyW)));
-        } else {
-            System.out.println("Card challenge is OK!"); // TODO DELETE THIS
+            final ResponseAPDU abortResponse = cardMngr.transmit(new CommandAPDU(0xB0, 0x60, 0x00, 0x00, 0x00));
+            retValue = abortResponse.getSW();
+            if (retValue >= 0x63C0 && retValue < 0x63C3){
+                return retValue - 0x63C0;
+            }
+            return 0;
         }
         
         byte[] hostChallenge = generateChallenge(sha256HMAC, pubKeyW, cardPubW);
@@ -352,16 +353,9 @@ public class SecureCardChannel {
         int secretLen = ka.generateSecret(cardPubW, (short) 0, (short) cardPubW.length, temp, (short) 0);
         byte[] finalSecret = Arrays.copyOfRange(temp, 0, secretLen);
         
-        byte[] cardSecret = response4.getData();
-        
+        staticEncKey = finalSecret;
         //DEBUG
-        if (Arrays.equals(cardSecret, finalSecret)){
-            System.out.println("Final secrets are the same");
-            staticEncKey = finalSecret;
-        } else {
-            System.out.println("Final secrets are NOT the same");
-        }
-        
+        secRandom.nextBytes(temp);   
         return -1;
     }
     
@@ -397,7 +391,7 @@ public class SecureCardChannel {
         return aesD.doFinal(data);
     }
     
-    boolean verifyNonce(byte[] data){
+    private boolean verifyNonce(byte[] data){
         short noncePos = (short) (data.length - 32); 
         byte[] cardNonce = new byte[32];
         System.arraycopy(data, noncePos, cardNonce, (short) 0, (short) 32);
