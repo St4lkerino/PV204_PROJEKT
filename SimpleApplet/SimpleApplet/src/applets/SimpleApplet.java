@@ -138,9 +138,6 @@ public class SimpleApplet extends javacard.framework.Applet {
             m_pin = new OwnerPIN((byte) 5, (byte) 4); // 5 tries, 4 digits in pin
             m_pin.update(buffer, (byte) dataOffset, (byte) buffer[dataOffset - 1]); // set initial random pin
 
-            // INIT HASH ENGINE
-            m_hash = MessageDigest.getInstance(MessageDigest.ALG_SHA, false);
-
             md5_hash = MessageDigest.getInstance(MessageDigest.ALG_MD5, false);
             
             m_hmac_sha256 = Signature.getInstance(Signature.ALG_HMAC_SHA_256, false);
