@@ -139,9 +139,25 @@ public class SecureCardChannel {
         return true;
     }
     
-    public byte[] transmit() throws Exception{
-         // send over protected channel for card to send back ffffffffffffffffffffffff 
-        byte[] data = Util.hexStringToByteArray("B0570000ffffffffffffffffffffffff");
+    public void endSession() throws Exception {
+        cardMngr.Disconnect(false);
+    }
+    
+    public byte[] getRandom(short len) throws Exception {
+        byte[] command = Util.hexStringToByteArray("B054000000");
+        command[2] = (byte) len;
+        return transmit(command);
+    }
+    
+    public byte[] returnData(byte[] data) throws Exception {
+        byte[] command = Util.hexStringToByteArray("B0570000"); 
+        byte[] apdu = new byte[data.length + 4];
+        System.arraycopy(command, 0, apdu, 0, command.length);
+        System.arraycopy(data, 0, apdu, command.length, data.length);
+        return transmit(apdu);
+    }
+    
+    private byte[] transmit(byte[] data) throws Exception{
         byte[] dataWithNonce = addNonce(data);
 
         // update nonce
@@ -172,10 +188,8 @@ public class SecureCardChannel {
         // Remove nonce
         byte[] withoutNonce = new byte[decryptedResponse.length - 32];
         System.arraycopy(decryptedResponse, 0, withoutNonce, 0, decryptedResponse.length - 32);
-        System.out.println(Arrays.toString(withoutNonce));
 
-        cardMngr.Disconnect(false);
-        return new byte[1];
+        return withoutNonce;
     }
     
     /**

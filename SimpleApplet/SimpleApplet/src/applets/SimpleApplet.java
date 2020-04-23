@@ -300,6 +300,8 @@ public class SimpleApplet extends javacard.framework.Applet {
     public byte[] process(byte[] apduBuffer) throws ISOException {
         // These are supported inside nad outside protected
         switch (apduBuffer[ISO7816.OFFSET_INS]) {
+            case INS_RANDOM:
+                return Random(apduBuffer);
             case INS_RETURNDATA:
                 return ReturnData(apduBuffer);
             default:
@@ -664,15 +666,14 @@ public class SimpleApplet extends javacard.framework.Applet {
     }
 
     // GENERATE RANDOM DATA
-    void Random(APDU apdu) {
-        byte[] apdubuf = apdu.getBuffer();
-
+    byte[] Random(byte[] apdubuf) {
         // GENERATE DATA
         short randomDataLen = apdubuf[ISO7816.OFFSET_P1];
-        m_secureRandom.nextBytes(apdubuf, ISO7816.OFFSET_CDATA, randomDataLen);
+        
+        byte[] randomData = new byte[randomDataLen];
+        m_secureRandom.nextBytes(randomData, (short) 0, randomDataLen);
 
-        // SEND OUTGOING BUFFER
-        apdu.setOutgoingAndSend(ISO7816.OFFSET_CDATA, randomDataLen);
+        return randomData;
     }
 
     // RETURN INPUT DATA UNCHANGED
