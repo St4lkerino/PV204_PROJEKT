@@ -304,7 +304,11 @@ public class SimpleApplet extends javacard.framework.Applet {
         ISOException.throwIt((short) ((short) 0x63C0 + (short) m_maxNumberOfTriesLeft));
     }
     
-    
+    /**
+     * Method processing APDUs
+     * @param apduBuffer array containing APDU 
+     * @return array containing response data
+     */
     public byte[] process(byte[] apduBuffer) throws ISOException {
         // These are supported inside nad outside protected
         switch (apduBuffer[ISO7816.OFFSET_INS]) {
@@ -320,6 +324,10 @@ public class SimpleApplet extends javacard.framework.Applet {
         return null;
     }
 
+    /**
+     * Method for processing APDUs obtained through the protected channel
+     * @param apdu obtained APDU which is padded encrypted and authenticated by MAC
+    */
     void processProtected(APDU apdu) {
         byte[] apdubuf = apdu.getBuffer();
         short dataLen = (short) apdu.setIncomingAndReceive();
@@ -375,8 +383,8 @@ public class SimpleApplet extends javacard.framework.Applet {
     }
 
     /**
-     * Method veryfying if correct nonce has been received with the message
-     * @param data array containig APDU data together with nonce 
+     * Method verifying if correct nonce has been received with the message
+     * @param data array containing APDU data together with nonce 
      * @return APDU data without the nonce
      */
     byte[] verifyNonce(byte[] data){
@@ -678,7 +686,11 @@ public class SimpleApplet extends javacard.framework.Applet {
         }
     }
 
-    // ENCRYPT INCOMING BUFFER
+    /**
+     * Method for encrypting response sent through the protected channel
+     * @param data array with response data
+     * @return data array with encrypted padded data
+     */
     byte[] Encrypt(byte[] data) {
         short dataLen = (short) data.length;
         short paddLen = (short) (16 - (dataLen % 16));
@@ -706,7 +718,11 @@ public class SimpleApplet extends javacard.framework.Applet {
         return encryptedData;
     }
 
-    // DECRYPT INCOMING BUFFER
+    /**
+     * Method for decrypting obtained APDU through the protected channel
+     * @param data array with APDU
+     * @return data array with decrypted and unpadded data
+     */
     byte[] Decrypt(byte[] data) {
         short dataLen = (short) data.length;
         byte[] decryptedData = new byte[dataLen];
@@ -731,7 +747,11 @@ public class SimpleApplet extends javacard.framework.Applet {
         return unpaddedData;
     }
 
-    // GENERATE RANDOM DATA
+    /**
+     * Method for processing the getRandom APDU inside protected channel
+     * @param data array with APDU
+     * @return data array with random data of specified length
+     */
     byte[] Random(byte[] apdubuf) {
         // GENERATE DATA
         short randomDataLen = apdubuf[ISO7816.OFFSET_P1];
@@ -742,7 +762,12 @@ public class SimpleApplet extends javacard.framework.Applet {
         return randomData;
     }
 
-    // RETURN INPUT DATA UNCHANGED
+    
+    /**
+     * Method for processing the returnData APDU inside protected channel
+     * @param data array with APDU
+     * @return data array data without apdu command
+     */
     byte[] ReturnData(byte[] apdubuf) {
         byte[] returnData = new byte[apdubuf.length - ISO7816.OFFSET_CDATA + 1];
         Util.arrayCopy(apdubuf, (short) (ISO7816.OFFSET_CDATA - 1), returnData, (short) 0, (short) (apdubuf.length - ISO7816.OFFSET_CDATA + 1));

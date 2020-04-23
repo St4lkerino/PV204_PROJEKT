@@ -153,13 +153,22 @@ public class SecureCardChannel {
         cardMngr.Disconnect(false);
     }
     
+    /**
+     * Get random data from the card, sends the APDU over protected channel
+     * @param len expected length of data
+     * @return array with the random data
+     */
     public byte[] getRandom(short len) throws Exception {
         byte[] command = Util.hexStringToByteArray("B054000000");
         command[2] = (byte) len;
         return transmit(command);
     }
     
-    //test function
+    /**
+     * Get back same data from card over protected channel, this is a testing function
+     * @param data data to be sent back
+     * @return array with the data received from card
+     */
     public byte[] returnData(byte[] data) throws Exception {
         byte[] command = Util.hexStringToByteArray("B0570000"); 
         byte[] apdu = new byte[data.length + 4];
@@ -168,6 +177,11 @@ public class SecureCardChannel {
         return transmit(apdu);
     }
     
+    /**
+     * Send buffer to the card over protected channel
+     * @param data data to be sent
+     * @return array received response from the card
+     */
     private byte[] transmit(byte[] data) throws Exception{
         byte[] dataWithNonce = addNonce(data);
 
@@ -440,10 +454,20 @@ public class SecureCardChannel {
         return Arrays.equals(digest, signature);
     }
     
+    /**
+     * Encrypt buffer to be sent over to the card over protected channel
+     * @param data data to be encrypted
+     * @return array with encrypted data
+     */
     private byte[] encrypt(byte[] data) throws Exception {
         return aesE.doFinal(data);
     }
     
+    /**
+     * Decrypt buffer received from the card over protected channel
+     * @param data data to be decrypted
+     * @return array with decrypted data
+     */
     private byte[] decrypt(byte[] data) throws Exception {
         return aesD.doFinal(data);
     }
