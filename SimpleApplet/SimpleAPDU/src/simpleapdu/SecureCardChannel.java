@@ -138,7 +138,7 @@ public class SecureCardChannel {
         // update nonce
         nonce = sha.doFinal(nonce);
         // encrypt data + nonce
-        byte[] encryptedData = aesE.doFinal(dataWithNonce);
+        byte[] encryptedData = encrypt(dataWithNonce);
         // sign
         byte[] signedData = sign(encryptedData);
 
@@ -153,7 +153,7 @@ public class SecureCardChannel {
         
         byte[] encryptedResponse = new byte[responseData.length - 32];
         System.arraycopy(responseData, 0, encryptedResponse, 0, responseData.length - 32);
-        byte[] decryptedResponse = aesD.doFinal(encryptedResponse);
+        byte[] decryptedResponse = decrypt(encryptedResponse);
         
         
         if(!verifyNonce(decryptedResponse)){
@@ -353,7 +353,7 @@ public class SecureCardChannel {
         return signedData;
     }
     
-    boolean verify(byte[] signedData) throws Exception {
+    private boolean verify(byte[] signedData) throws Exception {
         short dataLen = (short) (signedData.length - 32);
         byte data[] = new byte[dataLen];
         byte signature[] = new byte[32];
@@ -363,22 +363,12 @@ public class SecureCardChannel {
         return Arrays.equals(digest, signature);
     }
     
-    byte[] encrypt(byte[] data) throws Exception {
-        short dataLen = (short) data.length;
-        byte[] encryptedData = new byte[dataLen];
-        
-        
-        
-        return encryptedData;
+    private byte[] encrypt(byte[] data) throws Exception {
+        return aesE.doFinal(data);
     }
     
-    byte[] decrypt(byte[] data) throws Exception {
-        short dataLen = (short) data.length;
-        byte[] decryptedData = new byte[dataLen];
-        
-        
-        
-        return decryptedData;
+    private byte[] decrypt(byte[] data) throws Exception {
+        return aesD.doFinal(data);
     }
     
     boolean verifyNonce(byte[] data){
@@ -392,7 +382,7 @@ public class SecureCardChannel {
         return true;
     }
     
-    byte[] addNonce(byte[] data){
+    private byte[] addNonce(byte[] data){
         short dataLen = (short) data.length;
         byte[] withNonce = new byte[(short) 32 + dataLen];
         System.arraycopy(data, (short) 0, withNonce, (short) 0, dataLen);
