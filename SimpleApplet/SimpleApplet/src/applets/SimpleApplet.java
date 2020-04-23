@@ -206,6 +206,11 @@ public class SimpleApplet extends javacard.framework.Applet {
             return;
         }
         
+        //no more;
+        if (m_maxNumberOfTriesLeft <= 0){
+             ISOException.throwIt((short) 0x63C0);
+        }
+        
         try {
             // APDU instruction parser
             if (apduBuffer[ISO7816.OFFSET_CLA] == CLA_SIMPLEAPPLET) {
@@ -288,6 +293,9 @@ public class SimpleApplet extends javacard.framework.Applet {
         }
     }
     
+    /*
+    * resets the session for the card, lowers the max number of tries
+    */
     void abort(){
         if (m_maxNumberOfTriesLeft > 0){
             m_maxNumberOfTriesLeft--;
@@ -442,10 +450,10 @@ public class SimpleApplet extends javacard.framework.Applet {
         // GET DERIVATION DATA FOR ENC KEY
         byte[] derivData = derivationData(apdu);
         
-        // DERIVE STATIC ENC KEY (TODO: MOVE IT ELSEWHERE, NOT FOR EVERY SESSION)
+        // DERIVE STATIC ENC KEY 
         byte[] encKeyHash = new byte[16];
         
-        // USE MD5 TO CREATE 16B STATIC ENC KEY (TODO: USE SOMETHING ELSE THAN MD5)
+        // USE MD5 TO CREATE 16B STATIC ENC KEY
         md5_hash = MessageDigest.getInstance(MessageDigest.ALG_MD5, false);
         int len = md5_hash.doFinal(m_ramArray, (short) 0, (short) 20, encKeyHash, (short) 0);
         
@@ -495,11 +503,14 @@ public class SimpleApplet extends javacard.framework.Applet {
         // SEND OUTGOING BUFFER
         apdu.setOutgoingAndSend(ISO7816.OFFSET_CDATA, (short) 8);
         
-        return derivData;
-        
-        
+        return derivData;  
     }
 
+    /**
+     * Exchange public keys with the host
+     * Also generates the keys
+     * @param apdu APDU containing pub key from host
+     */ 
     void exchangePubKeys(APDU apdu) {
         try {
             byte[] apdubuf = apdu.getBuffer();
@@ -508,7 +519,7 @@ public class SimpleApplet extends javacard.framework.Applet {
             m_hostPubW = new byte[dataLen];
             Util.arrayCopy(apdubuf, ISO7816.OFFSET_CDATA, m_hostPubW, (short) 0, dataLen);
             
-            kp = new KeyPair(KeyPair.ALG_EC_FP, //TODO, generate on exchange?
+            kp = new KeyPair(KeyPair.ALG_EC_FP, 
                     KeyBuilder.LENGTH_EC_FP_128);
             kp.genKeyPair();
             m_privKey = (ECPrivateKey) kp.getPrivate();
@@ -532,6 +543,11 @@ public class SimpleApplet extends javacard.framework.Applet {
         }
     }
 
+    /**
+     * Generates the hash challenge for verification during the ecdh protocols
+     * Challenge = HMAC_SHA256(card Pub key . host pub key . temporary card pub key)
+     * the key used for hmac is the temporary secret (first ecdh)
+     */ 
     byte[] generateHashChallenge() {
 
         m_tempSessionHMACKey = (HMACKey) KeyBuilder.buildKey(KeyBuilder.TYPE_HMAC, KeyBuilder.LENGTH_HMAC_SHA_256_BLOCK_64, false);
@@ -554,6 +570,11 @@ public class SimpleApplet extends javacard.framework.Applet {
         return result;
     }
 
+    /**
+     * Receives the temporary host public key, encrypted with the PIN
+     * deciphers it and creates a temporary secret for challenges
+     * returns the cards temporary Pub key + a challenge for the Host to verify
+     */ 
     void GetEncryptedTempPub(APDU apdu) {
 
         byte[] apdubuf = apdu.getBuffer();
@@ -579,7 +600,6 @@ public class SimpleApplet extends javacard.framework.Applet {
             abort();
         }        
 
-
         //forget host temporary pub key
         m_secureRandom.nextBytes(m_tempHostPubW, (short) 0, (short) m_tempHostPubW.length);
         m_tempHostPubW = null;
@@ -598,6 +618,12 @@ public class SimpleApplet extends javacard.framework.Applet {
 
     }
     
+    
+    /**
+     * Verifies the host hash challenge for during the ecdh protocols
+     * Challenge = HMAC_SHA256(host Pub key . card pub key . 0)
+     * the key used for hmac is the temporary secret (first ecdh)
+     */ 
     boolean VerifyHostChallenge(byte[] challenge){
         
         //Copy host pub W to ram
@@ -612,10 +638,16 @@ public class SimpleApplet extends javacard.framework.Applet {
                 
         byte[] result = new byte[32];
         short resultLen = m_hmac_sha256.sign(m_ramArray,(short) 0, totalLength, result, (short) 0); 
+        m_tempSessionHMACKey.clearKey();
         
         return Util.arrayCompare(result, (short) 0, challenge, (short) 0, (short) challenge.length) == 0x0;
     }
     
+    /*
+    * Receives the host challenge, verifies it,
+    * and generates the long term secret derived from card and hosts EC keys with DH
+    * stores in ram
+    */
     void GetHostChallenge(APDU apdu){
         try {
             byte[] apdubuf = apdu.getBuffer();
@@ -634,7 +666,6 @@ public class SimpleApplet extends javacard.framework.Applet {
             keyAgreement = KeyAgreement.getInstance(KeyAgreement.ALG_EC_SVDP_DH, false);
             keyAgreement.init(m_privKey);
             short secretLen = keyAgreement.generateSecret(m_hostPubW, (short) 0, (short) m_hostPubW.length, m_ramArray, (short) 0);
-            //FROM HERE ON OUT, THE DERIVED SECRET FROM PUB KEYS IS IN RAM
             m_pubKey.clearKey();
             m_privKey.clearKey();
             

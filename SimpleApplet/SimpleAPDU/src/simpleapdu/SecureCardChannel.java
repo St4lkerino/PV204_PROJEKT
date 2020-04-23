@@ -72,6 +72,10 @@ public class SecureCardChannel {
         
     }
 
+    /**
+     * initiates a session with the card, basically runs the protocol
+     * @return whether the protocol succeeded or not
+     */
     public boolean initSession() throws Exception{   
         aesE = Cipher.getInstance("AES/CBC/PKCS5PADDING");
         aesD = Cipher.getInstance("AES/CBC/PKCS5PADDING");
@@ -138,6 +142,9 @@ public class SecureCardChannel {
         return true;
     }
     
+    /**
+     * nulls the digests , removes nonce, disconnects the card
+     */
     public void endSession() throws Exception {
         aesE = null;
         aesD = null;
@@ -255,6 +262,17 @@ public class SecureCardChannel {
         return derivData;
     }
     
+    /**
+     * Verifies a challenge received from the card. 
+     * Challenge = HMAC_SHA256 (card pub key . host pub key . card temporary pub key)
+     * key is the shared secret from temporary pub keys using ecdh
+     * @param mac the HMAC digest
+     * @param cardPubW card public key
+     * @param hostPubW host public key
+     * @param cardTempPub card temporary public key
+     * @param challenge card challenge
+     * @return whether the hashes match
+     */
     private boolean verifyChallenge(Mac mac, byte[] cardPubW, byte[] hostPubW, byte[] cardTempPub, byte[] challenge){
         byte[] concatedKeys = new byte[cardPubW.length + hostPubW.length + cardTempPub.length];
         System.arraycopy(cardPubW, 0, concatedKeys, 0, cardPubW.length);
@@ -267,6 +285,15 @@ public class SecureCardChannel {
         return Arrays.equals(chall, challenge);
     }
     
+    /**
+     * Generates a challenge received for the card. 
+     * Challenge = HMAC_SHA256 (host pub key . card pub key . 0)
+     * key is the shared secret from temporary pub keys using ecdh
+     * @param mac HMAC digest
+     * @param hostPubW host pub key
+     * @param cardPubW card pub key
+     * @return  host challenge
+     */    
     private byte[] generateChallenge(Mac mac, byte[] hostPubW, byte[] cardPubW){
         byte[] concatedKeys = new byte[cardPubW.length + hostPubW.length + 1];
         System.arraycopy(hostPubW, 0, concatedKeys, 0, hostPubW.length);
@@ -276,6 +303,12 @@ public class SecureCardChannel {
         return mac.doFinal(concatedKeys);
     }
     
+    /**
+     * This derives a shared secret using ECDH with ACDHEKE protocol
+     * @param PIN the pin obtained from the input
+     * @return <0, 3) are number of tries left, -1 is success
+     * @throws Exception 
+     */
     private int ecdh(byte[] PIN) throws Exception {
         KeyPair kp = new KeyPair(KeyPair.ALG_EC_FP, 
                     KeyBuilder.LENGTH_EC_FP_128);
